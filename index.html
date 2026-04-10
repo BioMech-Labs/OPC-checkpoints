@@ -1,262 +1,175 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OL Pipeline Manager</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OL Pipeline</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 </head>
-<body class="bg-slate-50 min-h-screen pb-20 font-sans">
 
-    <header class="bg-slate-900 text-white p-4 sticky top-0 z-50 shadow-xl">
-        <div class="max-w-4xl mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold flex items-center gap-2">
-                <i data-lucide="microscope"></i> OL Pipeline
-            </h1>
-            <div class="flex items-center gap-4">
-                <select id="userSelect" class="bg-slate-800 text-sm border-none rounded px-2 py-1 outline-none text-white font-bold">
-                    <option value="EM">EM</option>
-                    <option value="VJ">VJ</option>
-                    <option value="CV">CV</option>
-                </select>
-                <div id="syncStatus" class="flex items-center gap-2">
-                    <div id="statusDot" class="w-3 h-3 bg-red-500 rounded-full shadow-[0_0_8px_red]"></div>
-                </div>
-            </div>
-        </div>
-    </header>
+<body class="bg-slate-100">
 
-    <main class="max-w-3xl mx-auto p-4 space-y-6">
+<header class="bg-black text-white p-4 flex justify-between">
+  <div class="font-bold">OL Pipeline</div>
+  <div id="statusDot" class="w-3 h-3 bg-red-500 rounded-full"></div>
+</header>
 
-        <section class="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-[10px] font-black uppercase text-slate-400 mb-1">Current Active Batch ID</label>
-                    <input type="text" id="batchId" placeholder="Type ID & press Tab" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-2xl text-lg font-bold outline-indigo-400">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-black uppercase text-slate-400 mb-1">Stiffnesses</label>
-                    <input type="text" id="stiffnesses" placeholder="5k, 50k" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-2xl text-lg font-bold outline-indigo-400">
-                </div>
-            </div>
-        </section>
+<div class="max-w-3xl mx-auto p-4 space-y-6">
 
-        <!-- THE 7 GATES -->
-        <div id="gates" class="space-y-4">
-            
-            <!-- Gate 1 -->
-            <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-blue-500 gate-card" data-gate="1">
-                <h2 class="text-lg font-black text-slate-800 mb-4">1. Micropillar Fabrication</h2>
-                <label class="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl cursor-pointer mb-4">
-                    <input type="checkbox" class="gate-check w-5 h-5 accent-blue-600">
-                    <span class="text-sm font-bold">10x spots checked & random spots imaged</span>
-                </label>
-                <input type="file" class="hidden img-input" multiple accept="image/*">
-                <button onclick="this.previousElementSibling.click()" class="w-full py-3 bg-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-500 flex items-center justify-center gap-2">
-                    <i data-lucide="camera" size="14"></i> Upload Images
-                </button>
-                <div class="img-preview flex gap-2 overflow-x-auto p-1 mt-2"></div>
-                <div class="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center text-[10px] text-slate-400">
-                    <span class="gate-meta italic">No log</span>
-                    <button class="sync-btn bg-blue-600 text-white px-6 py-2 rounded-2xl font-bold shadow-lg">Sync Gate</button>
-                </div>
-            </div>
+<input id="batchId" placeholder="Batch ID" class="w-full p-3 rounded-xl border font-bold">
 
-            <!-- Gate 2 -->
-            <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-purple-600 gate-card" data-gate="2">
-                <h2 class="text-lg font-black text-slate-800 mb-1">2. Functionalisation & Coating</h2>
-                <div class="p-3 bg-purple-50 text-purple-700 rounded-2xl text-center font-mono font-bold mb-4" id="expiryTimer">48:00:00 Remaining</div>
-                <label class="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl cursor-pointer mb-4">
-                    <input type="checkbox" class="gate-check w-5 h-5 accent-purple-600">
-                    <span class="text-sm font-bold">PDL + Laminin coated</span>
-                </label>
-                <input type="file" class="hidden img-input" multiple accept="image/*">
-                <button onclick="this.previousElementSibling.click()" class="w-full py-3 bg-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-500 flex items-center justify-center gap-2">
-                    <i data-lucide="camera" size="14"></i> Upload Images
-                </button>
-                <div class="img-preview flex gap-2 overflow-x-auto p-1 mt-2"></div>
-                <button class="sync-btn mt-4 w-full bg-purple-600 text-white py-2 rounded-2xl text-xs font-bold">Sync & Start Timer</button>
-            </div>
+<!-- GATE 1 -->
+<div class="bg-white p-4 rounded-xl gate-card" data-gate="1">
+  <h2 class="font-bold">1. Micropillars</h2>
+  <input type="checkbox" class="gate-check"> OK
 
-            <!-- Gate 3 -->
-            <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-amber-500 gate-card" data-gate="3">
-                <h2 class="text-lg font-black text-slate-800 mb-2">3. Isolation Reagents</h2>
-                <label class="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl cursor-pointer">
-                    <input type="checkbox" class="gate-check w-6 h-6 accent-amber-600 font-black">
-                    <span class="text-sm font-bold">Papain, Serum PBS, etc: Prepared & Sterile Filtered?</span>
-                </label>
-                <button class="sync-btn mt-4 w-full bg-amber-600 text-white py-2 rounded-2xl text-xs font-bold shadow-lg">Verify Prep</button>
-            </div>
+  <input type="file" class="hidden img-input" accept="image/*" capture="environment" multiple>
+  <button onclick="upload(this)">Add Image</button>
 
-            <!-- Gate 4 -->
-            <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-emerald-600 gate-card" data-gate="4">
-                <h2 class="text-lg font-black text-slate-800 mb-4">4. OPC Isolation (MACS)</h2>
-                <div class="grid grid-cols-2 gap-4 mb-4 font-bold uppercase text-[10px]">
-                    <div>Pups<input type="number" id="pupInput" value="1" class="w-full p-3 bg-slate-50 rounded-2xl text-lg mt-1 font-black"></div>
-                    <div>Yield<input type="number" id="yieldInput" placeholder="0" class="w-full p-3 bg-slate-50 rounded-2xl text-lg mt-1 font-black"></div>
-                </div>
-                <div class="p-4 bg-emerald-50 rounded-3xl text-center">
-                    <span class="text-[10px] font-black text-emerald-400 uppercase">Cells Per Pup</span>
-                    <div id="yieldDisplay" class="text-4xl font-black text-emerald-800 font-mono">0</div>
-                </div>
-                <button class="sync-btn mt-4 w-full bg-emerald-600 text-white py-2 rounded-2xl text-xs font-bold shadow-lg">Save Yield</button>
-            </div>
+  <div class="img-preview flex gap-2 flex-wrap"></div>
 
-            <!-- Path Trackers -->
-            <div class="text-center text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] py-4">Seeding & Expansion</div>
+  <button class="sync-btn">Sync</button>
+</div>
 
-             <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-rose-500 gate-card" data-gate="5">
-                <h2 class="text-lg font-black text-slate-800 mb-4">5. Direct Seeding</h2>
-                <label class="flex items-center gap-3 bg-rose-50 p-4 rounded-2xl cursor-pointer">
-                    <input type="checkbox" class="gate-check w-5 h-5 accent-rose-600">
-                    <span class="text-sm font-bold text-rose-900">2 wells of 4-well control seeded</span>
-                </label>
-                <button class="sync-btn mt-4 w-full bg-rose-600 text-white py-2 rounded-2xl text-xs font-bold">Sync Seeding</button>
-            </div>
+<!-- GATE 4 -->
+<div class="bg-white p-4 rounded-xl gate-card" data-gate="4">
+  <h2 class="font-bold">4. OPC Isolation</h2>
 
-            <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-indigo-500 gate-card" data-gate="6">
-                <h2 class="text-lg font-black text-slate-800 mb-4">6. Expansion Progress</h2>
-                <div id="dailyLogs" class="space-y-2 mb-4"></div>
-                <button onclick="addDailyRecord()" class="w-full border-2 border-dashed border-indigo-100 py-3 rounded-2xl text-[10px] font-black uppercase text-indigo-400 hover:bg-indigo-50">+ Add Image Log</button>
-                <button class="sync-btn mt-4 w-full bg-indigo-600 text-white py-2 rounded-2xl text-xs font-bold">Sync Expansion</button>
-            </div>
+  Pups: <input id="pups" type="number" value="1"><br>
 
-             <div class="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-l-slate-800 gate-card" data-gate="7">
-                <h2 class="text-lg font-black text-slate-800 mb-4">7. Lift & Final Seeding</h2>
-                <label class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer mb-2 font-bold text-xs"><input type="checkbox" class="gate-check"> Lifted with Accutase</label>
-                <label class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer font-bold text-xs"><input type="checkbox" class="gate-check"> Counted + Seeded to Pillars</label>
-                <button class="sync-btn mt-4 w-full bg-slate-800 text-white py-2 rounded-2xl text-xs font-bold">Complete Batch</button>
-            </div>
-        </div>
+  <h3>Pre-MACS</h3>
+  Count <input id="preCount">
+  Viability <input id="preViability">
 
-        <button onclick="window.print()" class="w-full py-5 bg-slate-900 text-white rounded-3xl font-black uppercase tracking-widest text-[10px] shadow-2xl mt-12">Export Record PDF</button>
+  <input type="file" class="hidden img-input" data-slot="pre" accept="image/*" capture="environment" multiple>
+  <button onclick="upload(this)">Add Pre Image</button>
+  <div class="img-preview" data-slot="pre"></div>
 
-    </main>
+  <h3>Post-MACS</h3>
+  Count <input id="postCount">
+  Viability <input id="postViability">
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyB_uwp8zHg3SX0pzgWYkLrtnmlb0Ag1Gb0",
-            authDomain: "biomech-eaf84.firebaseapp.com",
-            projectId: "biomech-eaf84",
-            storageBucket: "biomech-eaf84.firebasestorage.app",
-            messagingSenderId: "395514379581",
-            appId: "1:395514379581:web:ac639064af3dba0a995954"
-        };
+  <input type="file" class="hidden img-input" data-slot="post" accept="image/*" capture="environment" multiple>
+  <button onclick="upload(this)">Add Post Image</button>
+  <div class="img-preview" data-slot="post"></div>
 
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        let activeId = "null";
+  <div>Cells/Pup: <span id="cpp">0</span></div>
 
-        document.getElementById("batchId").addEventListener("change", (e) => {
-            activeId = e.target.value.trim().toLowerCase();
-            if(activeId) startLiveSync();
-        });
+  <button class="sync-btn">Sync</button>
+</div>
 
-        function startLiveSync() {
-            db.collection("ol_batches").doc(activeId).onSnapshot((doc) => {
-                if(doc.exists) {
-                    document.getElementById("statusDot").className = "w-3 h-3 bg-green-500 rounded-full shadow-[0_0_8px_green]";
-                    render(doc.data());
-                } else {
-                    document.getElementById("statusDot").className = "w-3 h-3 bg-yellow-500 rounded-full shadow-[0_0_8px_yellow]";
-                }
-            }, err => {
-                console.error(err);
-                document.getElementById("statusDot").className = "w-3 h-3 bg-red-500 rounded-full";
-            });
-        }
+</div>
 
-        document.querySelectorAll(".sync-btn").forEach(btn => {
-            btn.addEventListener("click", async (e) => {
-                const card = e.target.closest(".gate-card");
-                const gate = card.dataset.gate;
-                const user = document.getElementById("userSelect").value;
-                const checks = Array.from(card.querySelectorAll(".gate-check")).map(c => c.checked);
-                const imgs = Array.from(card.querySelectorAll(".img-preview img")).map(i => i.src);
+<script>
+const firebaseConfig = {
+apiKey: "AIzaSyB_uwp8zHg3SX0pzgWYkLrtnmlb0Ag1Gb0",
+authDomain: "biomech-eaf84.firebaseapp.com",
+projectId: "biomech-eaf84",
+storageBucket: "biomech-eaf84.firebasestorage.app",
+messagingSenderId: "395514379581",
+appId: "1:395514379581:web:ac639064af3dba0a995954"
+};
 
-                const data = {
-                    [`gate${gate}`]: {
-                        by: user, 
-                        time: new Date().toLocaleString(),
-                        checks: checks, 
-                        images: imgs,
-                        yield: gate == "4" ? document.getElementById("yieldDisplay").innerText : null
-                    }
-                };
-                await db.collection("ol_batches").doc(activeId).set(data, { merge: true });
-                alert("Gate " + gate + " Synced!");
-            });
-        });
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const storage = firebase.storage();
 
-        document.querySelectorAll(".img-input").forEach(inp => {
-            inp.addEventListener("change", (e) => {
-                const preview = e.target.parentElement.querySelector(".img-preview");
-                Array.from(e.target.files).forEach(file => {
-                    const reader = new FileReader();
-                    reader.onload = (re) => {
-                        const img = new Image();
-                        img.onload = () => {
-                            const canvas = document.createElement("canvas");
-                            const scale = 400 / img.width;
-                            canvas.width = 400; canvas.height = img.height * scale;
-                            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-                            const i = document.createElement("img");
-                            i.src = canvas.toDataURL("image/jpeg", 0.6);
-                            i.className = "w-20 h-20 rounded-xl object-cover border-2 shadow-sm shrink-0";
-                            preview.appendChild(i);
-                        };
-                        img.src = re.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                });
-            });
-        });
+let batch = null;
 
-        function render(data) {
-            Object.keys(data).forEach(k => {
-                const n = k.replace("gate", "");
-                const card = document.querySelector(`[data-gate="${n}"]`);
-                if(!card) return;
-                const g = data[k];
-                if(card.querySelector(".gate-meta")) card.querySelector(".gate-meta").innerText = `By ${g.by} | ${g.time}`;
-                const checks = card.querySelectorAll(".gate-check");
-                g.checks.forEach((v, i) => { if(checks[i]) checks[i].checked = v; });
-                const preview = card.querySelector(".img-preview");
-                if(preview) {
-                    preview.innerHTML = "";
-                    g.images.forEach(s => {
-                        const i = document.createElement("img");
-                        i.src = s; i.className = "w-20 h-20 rounded-xl object-cover shrink-0";
-                        preview.appendChild(i);
-                    });
-                }
-                if(n == "4") document.getElementById("yieldDisplay").innerText = g.yield;
-            });
-        }
+document.getElementById("batchId").onchange = e => {
+  batch = e.target.value;
+  db.collection("ol").doc(batch).onSnapshot(d => {
+    document.getElementById("statusDot").style.background="green";
+    if(d.exists) render(d.data());
+  });
+};
 
-        function addDailyRecord() {
-            const container = document.getElementById("dailyLogs");
-            const html = `
-                <div class="flex gap-2 items-center bg-white p-2 rounded-xl border border-slate-100 shadow-sm animate-fade-in">
-                    <span class="text-[9px] font-black text-indigo-300 uppercase">D${container.children.length + 1}</span>
-                    <input type="text" placeholder="Health/Notes..." class="flex-1 text-[11px] outline-none font-bold">
-                    <button onclick="this.parentElement.remove()" class="text-slate-300">×</button>
-                </div>`;
-            container.insertAdjacentHTML('beforeend', html);
-        }
+function upload(btn){
+  btn.parentElement.querySelector(".img-input").click();
+}
 
-        document.getElementById("yieldInput").addEventListener("input", () => {
-            const p = parseFloat(document.getElementById("pupInput").value) || 1;
-            const y = parseFloat(document.getElementById("yieldInput").value) || 0;
-            document.getElementById("yieldDisplay").innerText = Math.round(y/p).toLocaleString();
-        });
+document.querySelectorAll(".img-input").forEach(inp=>{
+  inp.onchange = async e=>{
+    if(!batch) return alert("Batch first");
 
-        // Initialize Icons correctly
-        window.onload = () => lucide.createIcons();
-    </script>
+    const card = e.target.closest(".gate-card");
+    const gate = card.dataset.gate;
+    const slot = e.target.dataset.slot || "main";
+    const preview = card.querySelector(`.img-preview[data-slot="${slot}"]`) || card.querySelector(".img-preview");
+
+    for(const file of e.target.files){
+      let name = prompt("Image name?", file.name);
+      if(!name) return;
+
+      const path = `batches/${batch}/g${gate}/${Date.now()}_${name}`;
+      const ref = storage.ref().child(path);
+
+      await ref.put(file);
+      const url = await ref.getDownloadURL();
+
+      addImg(preview,url,name,path);
+    }
+  };
+});
+
+function addImg(preview,url,name,path){
+  const d = document.createElement("div");
+  d.innerHTML = `
+    <img src="${url}" class="w-20 h-20 object-cover">
+    <div>${name}</div>
+    <button onclick="del(this)">X</button>
+  `;
+  d.dataset.path = path;
+  preview.appendChild(d);
+}
+
+async function del(btn){
+  const d = btn.parentElement;
+  await storage.ref().child(d.dataset.path).delete();
+  d.remove();
+}
+
+document.querySelectorAll(".sync-btn").forEach(btn=>{
+  btn.onclick = ()=>{
+    const card = btn.closest(".gate-card");
+    const gate = card.dataset.gate;
+
+    let data = {
+      imgs: Array.from(card.querySelectorAll("img")).map(i=>i.src)
+    };
+
+    if(gate=="4"){
+      data.pre = {
+        count: document.getElementById("preCount").value,
+        viability: document.getElementById("preViability").value
+      };
+      data.post = {
+        count: document.getElementById("postCount").value,
+        viability: document.getElementById("postViability").value
+      };
+      data.cpp = document.getElementById("cpp").innerText;
+    }
+
+    db.collection("ol").doc(batch).set({["g"+gate]:data},{merge:true});
+  };
+});
+
+function render(d){
+  console.log(d);
+}
+
+document.addEventListener("input",()=>{
+  let p = document.getElementById("pups").value || 1;
+  let c = document.getElementById("postCount").value || 0;
+  document.getElementById("cpp").innerText = Math.round(c/p);
+});
+
+</script>
 </body>
 </html>
