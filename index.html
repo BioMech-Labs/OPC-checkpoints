@@ -135,7 +135,10 @@
                         </div>
                     </div>
                 </div>
-                <button class="sync-btn mt-6 w-full bg-purple-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">RECORD</button>
+                <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span class="gate-meta text-[10px] font-bold text-slate-300 italic">NOT SYNCED</span>
+                    <button class="sync-btn bg-purple-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">RECORD</button>
+                </div>
             </div>
 
             <!-- GATE 3 -->
@@ -145,25 +148,10 @@
                     <input type="checkbox" class="gate-check w-8 h-8 accent-amber-600">
                     <span class="font-black text-amber-900 leading-tight">Papain, Serum PBS, & Media: Prepared & Sterile Filtered?</span>
                 </label>
-                <!-- Reference Images -->
-                <div class="ref-section">
-                    <h4 class="text-[10px] font-black uppercase text-slate-400 mb-2 flex items-center gap-1"><i data-lucide="book-open" size="12"></i> Reference Images</h4>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <span class="text-[9px] font-black text-emerald-600 uppercase">✓ Good to Proceed</span>
-                            <div class="ref-grid mt-1" data-ref="3-good"></div>
-                            <input type="file" class="hidden ref-input" accept="image/*" multiple data-ref="3-good">
-                            <button onclick="this.previousElementSibling.click()" class="mt-1 w-full py-2 bg-emerald-50 rounded-xl text-[8px] font-black uppercase text-emerald-400 border border-dashed border-emerald-200 hover:bg-emerald-100 transition">+ Add Good Example</button>
-                        </div>
-                        <div>
-                            <span class="text-[9px] font-black text-red-500 uppercase">✗ Do Not Proceed</span>
-                            <div class="ref-grid mt-1" data-ref="3-bad"></div>
-                            <input type="file" class="hidden ref-input" accept="image/*" multiple data-ref="3-bad">
-                            <button onclick="this.previousElementSibling.click()" class="mt-1 w-full py-2 bg-red-50 rounded-xl text-[8px] font-black uppercase text-red-400 border border-dashed border-red-200 hover:bg-red-100 transition">+ Add Bad Example</button>
-                        </div>
-                    </div>
+                <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span class="gate-meta text-[10px] font-bold text-slate-300 italic">NOT SYNCED</span>
+                    <button class="sync-btn bg-amber-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">RECORD</button>
                 </div>
-                <button class="sync-btn mt-6 w-full bg-amber-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">RECORD</button>
             </div>
 
             <!-- GATE 4 (ADVANCED) -->
@@ -209,28 +197,9 @@
                     <div class="img-preview grid grid-cols-3 gap-2 mt-3" data-slot="post"></div>
                 </div>
 
-                <!-- Reference Images -->
-                <div class="ref-section">
-                    <h4 class="text-[10px] font-black uppercase text-slate-400 mb-2 flex items-center gap-1"><i data-lucide="book-open" size="12"></i> Reference Images</h4>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <span class="text-[9px] font-black text-emerald-600 uppercase">✓ Good to Proceed</span>
-                            <div class="ref-grid mt-1" data-ref="4-good"></div>
-                            <input type="file" class="hidden ref-input" accept="image/*" multiple data-ref="4-good">
-                            <button onclick="this.previousElementSibling.click()" class="mt-1 w-full py-2 bg-emerald-50 rounded-xl text-[8px] font-black uppercase text-emerald-400 border border-dashed border-emerald-200 hover:bg-emerald-100 transition">+ Add Good Example</button>
-                        </div>
-                        <div>
-                            <span class="text-[9px] font-black text-red-500 uppercase">✗ Do Not Proceed</span>
-                            <div class="ref-grid mt-1" data-ref="4-bad"></div>
-                            <input type="file" class="hidden ref-input" accept="image/*" multiple data-ref="4-bad">
-                            <button onclick="this.previousElementSibling.click()" class="mt-1 w-full py-2 bg-red-50 rounded-xl text-[8px] font-black uppercase text-red-400 border border-dashed border-red-200 hover:bg-red-100 transition">+ Add Bad Example</button>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="mt-6 flex justify-between items-center text-[10px] text-slate-300 italic font-bold">
                     <span class="gate-meta">NOT SYNCED</span>
-                    <button class="sync-btn bg-emerald-600 text-white px-10 py-4 rounded-[2rem] font-black shadow-xl shadow-emerald-100 active:scale-95 transition">RECORD</button>
+                    <button class="sync-btn bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">RECORD</button>
                 </div>
             </div>
 
@@ -241,15 +210,15 @@
                 <div class="space-y-3">
                     <label class="path-option flex items-center gap-4 bg-violet-50 p-5 rounded-2xl cursor-pointer border-2 border-transparent hover:border-violet-300 transition">
                         <input type="radio" name="seedPath" value="direct" class="w-5 h-5 accent-violet-600">
-                        <span class="font-bold text-sm text-violet-900">Direct Seeding Only → Gate 5</span>
+                        <span class="font-bold text-sm text-violet-900">Direct Seeding</span>
                     </label>
                     <label class="path-option flex items-center gap-4 bg-violet-50 p-5 rounded-2xl cursor-pointer border-2 border-transparent hover:border-violet-300 transition">
                         <input type="radio" name="seedPath" value="expand" class="w-5 h-5 accent-violet-600">
-                        <span class="font-bold text-sm text-violet-900">Expansion Only → Gate 6 & 7</span>
+                        <span class="font-bold text-sm text-violet-900">Expansion</span>
                     </label>
                     <label class="path-option flex items-center gap-4 bg-violet-50 p-5 rounded-2xl cursor-pointer border-2 border-transparent hover:border-violet-300 transition">
                         <input type="radio" name="seedPath" value="both" class="w-5 h-5 accent-violet-600">
-                        <span class="font-bold text-sm text-violet-900">Both → Gates 5, 6 & 7</span>
+                        <span class="font-bold text-sm text-violet-900">Both</span>
                     </label>
                 </div>
                 <button id="savePathBtn" class="mt-4 w-full bg-violet-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">SAVE PATH CHOICE</button>
@@ -288,7 +257,10 @@
                         </div>
                     </div>
                 </div>
-                <button class="sync-btn mt-6 w-full bg-rose-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">RECORD</button>
+                <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span class="gate-meta text-[10px] font-bold text-slate-300 italic">NOT SYNCED</span>
+                    <button class="sync-btn bg-rose-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">RECORD</button>
+                </div>
             </div>
 
             <!-- GATE 6 -->
@@ -318,7 +290,10 @@
                         </div>
                     </div>
                 </div>
-                <button class="sync-btn mt-6 w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">RECORD</button>
+                <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span class="gate-meta text-[10px] font-bold text-slate-300 italic">NOT SYNCED</span>
+                    <button class="sync-btn bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">RECORD</button>
+                </div>
             </div>
 
             <!-- GATE 7 -->
@@ -328,25 +303,10 @@
                     <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl cursor-pointer font-bold text-xs"><input type="checkbox" class="gate-check"> Lifted with Accutase @ 37°C</label>
                     <label class="flex items-center gap-3 p-4 bg-slate-100 rounded-2xl cursor-pointer font-bold text-xs"><input type="checkbox" class="gate-check"> Counts verified & Seeded to Pillars</label>
                 </div>
-                <!-- Reference Images -->
-                <div class="ref-section">
-                    <h4 class="text-[10px] font-black uppercase text-slate-400 mb-2 flex items-center gap-1"><i data-lucide="book-open" size="12"></i> Reference Images</h4>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <span class="text-[9px] font-black text-emerald-600 uppercase">✓ Good to Proceed</span>
-                            <div class="ref-grid mt-1" data-ref="7-good"></div>
-                            <input type="file" class="hidden ref-input" accept="image/*" multiple data-ref="7-good">
-                            <button onclick="this.previousElementSibling.click()" class="mt-1 w-full py-2 bg-emerald-50 rounded-xl text-[8px] font-black uppercase text-emerald-400 border border-dashed border-emerald-200 hover:bg-emerald-100 transition">+ Add Good Example</button>
-                        </div>
-                        <div>
-                            <span class="text-[9px] font-black text-red-500 uppercase">✗ Do Not Proceed</span>
-                            <div class="ref-grid mt-1" data-ref="7-bad"></div>
-                            <input type="file" class="hidden ref-input" accept="image/*" multiple data-ref="7-bad">
-                            <button onclick="this.previousElementSibling.click()" class="mt-1 w-full py-2 bg-red-50 rounded-xl text-[8px] font-black uppercase text-red-400 border border-dashed border-red-200 hover:bg-red-100 transition">+ Add Bad Example</button>
-                        </div>
-                    </div>
+                <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span class="gate-meta text-[10px] font-bold text-slate-300 italic">NOT SYNCED</span>
+                    <button class="sync-btn bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition">RECORD</button>
                 </div>
-                <button class="sync-btn mt-6 w-full bg-slate-900 text-white py-5 rounded-3xl text-sm font-black shadow-2xl">RECORD</button>
             </div>
         </div>
 
