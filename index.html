@@ -437,6 +437,46 @@
             return normalizeBatchId(v).toLowerCase();
         }
 
+        function sanitizeFileName(name) {
+            return String(name || "image")
+                .replace(/[^a-zA-Z0-9._-]+/g, "_")
+                .replace(/^_+|_+$/g, "") || "image";
+        }
+
+        function sanitizeSlotName(slot) {
+            return String(slot || "main").toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+        }
+
+        function buildGateImagePath(batch, gate, slot, fileName) {
+            const safeBatch = normalizeBatchId(batch);
+            const safeGate = String(gate || "").replace(/[^0-9]/g, "");
+            const safeSlot = sanitizeSlotName(slot);
+            const safeFile = sanitizeFileName(fileName);
+            return `ol/${safeBatch}/g${safeGate}/${safeSlot}/${Date.now()}_${safeFile}`;
+        }
+
+        function isPathInBatchGate(path, batch, gate, slot) {
+            const safeBatch = normalizeBatchId(batch);
+            const safeGate = String(gate || "").replace(/[^0-9]/g, "");
+            const safeSlot = sanitizeSlotName(slot);
+            if (!path || !safeBatch || !safeGate) return false;
+            const expectedPrefix = `ol/${safeBatch}/g${safeGate}/${safeSlot}/`;
+            return String(path).startsWith(expectedPrefix);
+        }
+
+        function resetGateCard(card) {
+            if (!card) return;
+            card.querySelectorAll(".gate-check").forEach(c => c.checked = false);
+            card.querySelectorAll(".img-preview").forEach(p => p.innerHTML = "");
+            const meta = card.querySelector(".gate-meta");
+            if (meta) meta.textContent = "NOT SYNCED";
+            const status = card.querySelector(".status-pill");
+            if (status) {
+                status.textContent = "PENDING";
+                status.className = "status-pill text-[10px] font-black bg-slate-100 px-3 py-1 rounded-full text-slate-400";
+            }
+        }
+
         function setBatchFeedback(message, tone = "neutral") {
             if (!message) {
                 batchFeedbackEl.classList.add("hidden");
@@ -457,13 +497,7 @@
         }
 
         function resetBoardUI() {
-            document.querySelectorAll(".gate-card .gate-check").forEach(c => c.checked = false);
-            document.querySelectorAll(".img-preview").forEach(p => p.innerHTML = "");
-            document.querySelectorAll(".gate-meta").forEach(m => m.textContent = "NOT SYNCED");
-            document.querySelectorAll(".status-pill").forEach(p => {
-                p.textContent = "PENDING";
-                p.className = "status-pill text-[10px] font-black bg-slate-100 px-3 py-1 rounded-full text-slate-400";
-            });
+            document.querySelectorAll(".gate-card").forEach(resetGateCard);
             document.getElementById("pupInput").value = 1;
             document.getElementById("preCount").value = "";
             document.getElementById("preViability").value = "";
@@ -897,15 +931,22 @@ This copies Firestore data only. Existing image files remain in their current Fi
                     preview.appendChild(temp);
 
                     const name = "Image Log";
-                    const path = `ol/${batchId}/g${gate}/${slot}/${Date.now()}_${file.name}`;
+                    const path = buildGateImagePath(batchId, gate, slot, file.name);
                     const ref = storage.ref().child(path);
-                    
+
+                    console.log("[img-upload] start", { batchId, gate, slot, fileName: file.name, storagePath: path });
+
                     try {
                         await ref.put(file);
                         const url = await ref.getDownloadURL();
                         temp.remove();
                         createThumb(preview, url, name, path);
-                    } catch(err) { alert("Upload failed"); temp.remove(); }
+                        console.log("[img-upload] success", { batchId, gate, slot, storagePath: path, url });
+                    } catch(err) {
+                        console.error("[img-upload] failed", { batchId, gate, slot, storagePath: path, error: err });
+                        alert("Upload failed");
+                        temp.remove();
+                    }
                 }
                 e.target.value = "";
             };
@@ -1016,15 +1057,26 @@ This copies Firestore data only. Existing image files remain in their current Fi
                     notes: notesValue
                 };
 
-                // Capture photos from all slots
+                // Capture photos from all slots (enforce batch/gate-scoped storage paths)
                 const previews = card.querySelectorAll(".img-preview");
                 previews.forEach(p => {
                     const slotName = p.dataset.slot || "main";
-                    data[`imgs_${slotName}`] = Array.from(p.children).map(wrap => ({
+                    const rawItems = Array.from(p.children).map(wrap => ({
                         url: wrap.querySelector("img") ? wrap.querySelector("img").src : "",
                         name: wrap.querySelector("input") ? wrap.querySelector("input").value : "",
                         path: wrap.dataset.cloudpath || ""
                     }));
+
+                    const validItems = rawItems.filter(item => isPathInBatchGate(item.path, batchId, gateNum, slotName));
+                    if (validItems.length !== rawItems.length) {
+                        console.warn("[sync] dropped non-batch-scoped images", {
+                            batchId,
+                            gateNum,
+                            slotName,
+                            dropped: rawItems.filter(item => !isPathInBatchGate(item.path, batchId, gateNum, slotName)).map(item => item.path)
+                        });
+                    }
+                    data[`imgs_${slotName}`] = validItems;
                 });
 
                 if(gateNum == "4") {
@@ -1032,7 +1084,21 @@ This copies Firestore data only. Existing image files remain in their current Fi
                     data.pre = { c: document.getElementById("preCount").value, v: document.getElementById("preViability").value };
                     data.post = { c: document.getElementById("postCount").value, v: document.getElementById("postViability").value };
                     data.cpp = document.getElementById("cellsPerPup").innerText;
+                    console.log("[gate4-sync] payload", {
+                        batchId,
+                        gateNum,
+                        prePaths: (data.imgs_pre || []).map(i => i.path),
+                        postPaths: (data.imgs_post || []).map(i => i.path)
+                    });
                 }
+
+                console.log("[sync] writing Firestore", {
+                    batchId,
+                    gateNum,
+                    imagePaths: Object.keys(data)
+                        .filter(k => k.startsWith("imgs_"))
+                        .flatMap(k => (data[k] || []).map(i => i.path))
+                });
 
                 await db.collection("ol_pro").doc(batchId).set({ ["g"+gateNum]: data, notes: notesValue, updatedBy: user, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 batchListCache = [];
@@ -1042,6 +1108,15 @@ This copies Firestore data only. Existing image files remain in their current Fi
 
         // --- 5. RENDERER ---
         function renderBoard(data) {
+            // Hard reset first to prevent stale UI from previous batch (critical for image isolation)
+            document.querySelectorAll(".gate-card").forEach(resetGateCard);
+            document.getElementById("pupInput").value = 1;
+            document.getElementById("preCount").value = "";
+            document.getElementById("preViability").value = "";
+            document.getElementById("postCount").value = "";
+            document.getElementById("postViability").value = "";
+            document.getElementById("cellsPerPup").innerText = "0";
+
             Object.keys(data).forEach(key => {
                 if(key === "seedPath") return; // skip meta
                 const n = key.replace("g", "");
@@ -1062,16 +1137,36 @@ This copies Firestore data only. Existing image files remain in their current Fi
                 card.querySelectorAll(".img-preview").forEach(p => {
                     p.innerHTML = "";
                     const slotName = p.dataset.slot || "main";
-                    (g[`imgs_${slotName}`] || []).forEach(o => createThumb(p, o.url, o.name, o.path));
+                    const rawImgs = g[`imgs_${slotName}`] || [];
+                    const batchScopedImgs = rawImgs.filter(o => isPathInBatchGate(o.path, batchId, n, slotName));
+
+                    if (batchScopedImgs.length !== rawImgs.length) {
+                        console.warn("[render] skipped non-batch-scoped images", {
+                            batchId,
+                            gate: n,
+                            slot: slotName,
+                            skipped: rawImgs.filter(o => !isPathInBatchGate(o.path, batchId, n, slotName)).map(o => o.path)
+                        });
+                    }
+
+                    if (n === "4") {
+                        console.log("[gate4-render] images", {
+                            batchId,
+                            slot: slotName,
+                            paths: batchScopedImgs.map(o => o.path)
+                        });
+                    }
+
+                    batchScopedImgs.forEach(o => createThumb(p, o.url, o.name, o.path));
                 });
 
                 if(n == "4") {
-                    document.getElementById("pupInput").value = g.pups;
-                    document.getElementById("preCount").value = g.pre.c;
-                    document.getElementById("preViability").value = g.pre.v;
-                    document.getElementById("postCount").value = g.post.c;
-                    document.getElementById("postViability").value = g.post.v;
-                    document.getElementById("cellsPerPup").innerText = g.cpp;
+                    document.getElementById("pupInput").value = g.pups || 1;
+                    document.getElementById("preCount").value = g.pre?.c || "";
+                    document.getElementById("preViability").value = g.pre?.v || "";
+                    document.getElementById("postCount").value = g.post?.c || "";
+                    document.getElementById("postViability").value = g.post?.v || "";
+                    document.getElementById("cellsPerPup").innerText = g.cpp || "0";
                 }
             });
         }
