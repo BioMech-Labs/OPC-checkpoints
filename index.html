@@ -386,7 +386,7 @@
             </div>
         </div>
 
-        <button onclick="generateLabReport()" class="w-full py-6 bg-white border-4 border-slate-900 text-slate-900 rounded-[2.5rem] font-black uppercase tracking-[0.2em] text-xs shadow-2xl mt-12 hover:bg-slate-900 hover:text-white transition-all">Export Lab Report (PDF)</button>
+        <button id="exportPdfBtn" onclick="generateLabReport()" class="w-full py-6 bg-white border-4 border-slate-900 text-slate-900 rounded-[2.5rem] font-black uppercase tracking-[0.2em] text-xs shadow-2xl mt-12 hover:bg-slate-900 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed">Export Lab Report (PDF)</button>
 
     </main>
 
@@ -1552,229 +1552,301 @@ This copies Firestore data only. Existing image files remain in their current Fi
         // ═══════════════════════════════════════════════════
 
         async function generateLabReport() {
-            if (!batchId || !_lastBatchData) {
-                return alert("Please load a batch first before exporting.");
+            const exportBtn = document.getElementById("exportPdfBtn");
+            const originalExportBtnText = exportBtn ? exportBtn.textContent : "";
+
+            if (exportBtn) {
+                exportBtn.disabled = true;
+                exportBtn.textContent = "Generating PDF…";
             }
 
-            const data = _lastBatchData;
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ unit: "mm", format: "a4" });
-            const pw = doc.internal.pageSize.getWidth();   // 210
-            const ph = doc.internal.pageSize.getHeight();  // 297
-            const ml = 20, mr = 20, mt = 25, mb = 25;     // margins
-            const cw = pw - ml - mr;                       // content width
-            let y = mt;
-            let pageNum = 1;
+            try {
+                if (!batchId || !_lastBatchData) {
+                    alert("Please load a batch first before exporting.");
+                    return;
+                }
 
-            // Colour palette
-            const C = {
-                primary:  [30, 27, 75],     // indigo-950
-                accent:   [79, 70, 229],    // indigo-600
-                green:    [16, 185, 129],    // emerald-500
-                red:      [239, 68, 68],     // red-500
-                amber:    [217, 119, 6],     // amber-600
-                slate:    [100, 116, 139],   // slate-500
-                slateL:   [148, 163, 184],   // slate-400
-                bg:       [248, 250, 252],   // slate-50
-                white:    [255, 255, 255],
-                black:    [15, 23, 42],      // slate-900
-                border:   [226, 232, 240],   // slate-200
-            };
+                const data = _lastBatchData;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ unit: "mm", format: "a4" });
+                const pw = doc.internal.pageSize.getWidth();   // 210
+                const ph = doc.internal.pageSize.getHeight();  // 297
+                const ml = 20, mr = 20, mt = 25, mb = 25;     // margins
+                const cw = pw - ml - mr;                       // content width
+                let y = mt;
+                let pageNum = 1;
 
-            // ── Helper: format number with commas ──
-            function fmtNum(n) {
-                const v = parseFloat(n);
-                return isNaN(v) ? (n || "—") : v.toLocaleString("en-GB");
-            }
+                // Colour palette
+                const C = {
+                    primary:  [30, 27, 75],     // indigo-950
+                    accent:   [79, 70, 229],    // indigo-600
+                    green:    [16, 185, 129],    // emerald-500
+                    red:      [239, 68, 68],     // red-500
+                    amber:    [217, 119, 6],     // amber-600
+                    slate:    [100, 116, 139],   // slate-500
+                    slateL:   [148, 163, 184],   // slate-400
+                    bg:       [248, 250, 252],   // slate-50
+                    white:    [255, 255, 255],
+                    black:    [15, 23, 42],      // slate-900
+                    border:   [226, 232, 240],   // slate-200
+                };
 
-            // ── Helper: check space & add page ──
-            function ensureSpace(needed) {
-                if (y + needed > ph - mb) {
-                    addFooter();
-                    doc.addPage();
-                    pageNum++;
+                // ── Helper: robust numeric parsing (handles comma-formatted values) ──
+                function parseNumeric(value) {
+                    if (value === null || value === undefined) return NaN;
+                    if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
+
+                    const cleaned = String(value)
+                        .trim()
+                        .replace(/[\s,]/g, "")
+                        .replace(/[^0-9.+-]/g, "");
+                    if (!cleaned) return NaN;
+
+                    const parsed = Number(cleaned);
+                    return Number.isFinite(parsed) ? parsed : NaN;
+                }
+
+                // ── Helper: format number with thousands separators ──
+                function fmtNum(n, locale = "en-US") {
+                    const v = parseNumeric(n);
+                    if (Number.isNaN(v)) {
+                        const text = String(n || "—").trim();
+                        return text || "—";
+                    }
+
+                    const isInt = Math.abs(v % 1) < 0.0000001;
+                    return v.toLocaleString(locale, {
+                        minimumFractionDigits: isInt ? 0 : 1,
+                        maximumFractionDigits: isInt ? 0 : 2,
+                    });
+                }
+
+                // ── Helper: check space & add page ──
+                function ensureSpace(needed) {
+                    if (y + needed > ph - mb) {
+                        addFooter();
+                        doc.addPage();
+                        pageNum++;
+                        y = mt;
+                        addHeader();
+                    }
+                }
+
+                // ── Page header (after title page) ──
+                function addHeader() {
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7);
+                    doc.setTextColor(...C.slateL);
+                    doc.text(`OL Pipeline — ${batchId.toUpperCase()}`, ml, 12);
+                    doc.text(`Page ${pageNum}`, pw - mr, 12, { align: "right" });
+                    doc.setDrawColor(...C.border);
+                    doc.setLineWidth(0.3);
+                    doc.line(ml, 15, pw - mr, 15);
                     y = mt;
-                    addHeader();
                 }
-            }
 
-            // ── Page header (after title page) ──
-            function addHeader() {
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(7);
-                doc.setTextColor(...C.slateL);
-                doc.text(`OL Pipeline — ${batchId.toUpperCase()}`, ml, 12);
-                doc.text(`Page ${pageNum}`, pw - mr, 12, { align: "right" });
-                doc.setDrawColor(...C.border);
-                doc.setLineWidth(0.3);
-                doc.line(ml, 15, pw - mr, 15);
-                y = mt;
-            }
-
-            // ── Page footer ──
-            function addFooter() {
-                doc.setDrawColor(...C.border);
-                doc.setLineWidth(0.3);
-                doc.line(ml, ph - 18, pw - mr, ph - 18);
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.5);
-                doc.setTextColor(...C.slateL);
-                doc.text("Confidential — OL Pipeline Lab Record", ml, ph - 13);
-                doc.text(`Generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`, pw - mr, ph - 13, { align: "right" });
-            }
-
-            // ── Helper: draw a section heading ──
-            function sectionHeading(title, color) {
-                ensureSpace(14);
-                doc.setFillColor(...(color || C.primary));
-                doc.roundedRect(ml, y, cw, 10, 1.5, 1.5, "F");
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(11);
-                doc.setTextColor(255, 255, 255);
-                doc.text(title, ml + 5, y + 7);
-                y += 14;
-            }
-
-            // ── Helper: key-value pair ──
-            function kvLine(key, value, opts) {
-                opts = opts || {};
-                ensureSpace(7);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(8);
-                doc.setTextColor(...C.slate);
-                doc.text(key + ":", ml + (opts.indent || 0), y);
-                doc.setFont("helvetica", "normal");
-                doc.setTextColor(...C.black);
-                const valX = ml + (opts.indent || 0) + doc.getTextWidth(key + ": ") + 1;
-                doc.text(String(value || "—"), valX, y);
-                y += 5.5;
-            }
-
-            // ── Helper: checkbox item ──
-            function checkItem(label, checked, indent) {
-                ensureSpace(7);
-                const x = ml + (indent || 4);
-                doc.setFontSize(8);
-                // Draw checkbox
-                doc.setDrawColor(...(checked ? C.green : C.slateL));
-                doc.setLineWidth(0.4);
-                doc.rect(x, y - 3, 3.5, 3.5);
-                if (checked) {
-                    doc.setFillColor(...C.green);
-                    doc.rect(x + 0.6, y - 2.4, 2.3, 2.3, "F");
+                // ── Page footer ──
+                function addFooter() {
+                    doc.setDrawColor(...C.border);
+                    doc.setLineWidth(0.3);
+                    doc.line(ml, ph - 18, pw - mr, ph - 18);
+                    doc.setFont("helvetica", "italic");
+                    doc.setFontSize(6.5);
+                    doc.setTextColor(...C.slateL);
+                    doc.text("Confidential — OL Pipeline Lab Record", ml, ph - 13);
+                    doc.text(`Generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`, pw - mr, ph - 13, { align: "right" });
                 }
-                doc.setFont("helvetica", "normal");
-                doc.setTextColor(...C.black);
-                doc.text(label, x + 6, y);
-                y += 5.5;
-            }
 
-            // ── Helper: status badge ──
-            function statusBadge(isComplete) {
-                const label = isComplete ? "COMPLETE" : "PENDING";
-                const col = isComplete ? C.green : C.slateL;
-                doc.setFontSize(7);
-                doc.setFont("helvetica", "bold");
-                const tw = doc.getTextWidth(label) + 6;
-                doc.setFillColor(...col);
-                doc.roundedRect(pw - mr - tw - 2, y - 8.5, tw + 2, 6, 1.5, 1.5, "F");
-                doc.setTextColor(255, 255, 255);
-                doc.text(label, pw - mr - tw + 1, y - 4.5);
-            }
+                // ── Helper: draw a section heading ──
+                function sectionHeading(title, color) {
+                    ensureSpace(14);
+                    doc.setFillColor(...(color || C.primary));
+                    doc.roundedRect(ml, y, cw, 10, 1.5, 1.5, "F");
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(11);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(title, ml + 5, y + 7);
+                    y += 14;
+                }
 
-            // ── Helper: embed images in a grid (max 3 per row) ──
-            async function embedImages(images, maxW) {
-                if (!images || images.length === 0) return;
-                maxW = maxW || 45;
-                const gap = 4;
-                const perRow = Math.min(3, Math.floor(cw / (maxW + gap)));
-                const imgH = maxW * 0.75;
+                // ── Helper: key-value pair (wrapped to prevent overflow) ──
+                function kvLine(key, value, opts) {
+                    opts = opts || {};
+                    const indent = opts.indent || 0;
+                    const keyText = key + ":";
+                    const keyX = ml + indent;
+                    const valX = keyX + doc.getTextWidth(keyText + " ") + 1;
+                    const maxValueWidth = Math.max(20, pw - mr - valX);
+                    const valLines = doc.splitTextToSize(String(value || "—"), maxValueWidth);
+                    const lineHeight = 4;
+                    const needed = Math.max(7, (valLines.length * lineHeight) + 2);
 
-                for (let i = 0; i < images.length; i++) {
-                    if (i % perRow === 0) ensureSpace(imgH + 10);
-                    const col = i % perRow;
-                    const x = ml + col * (maxW + gap);
+                    ensureSpace(needed);
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(8);
+                    doc.setTextColor(...C.slate);
+                    doc.text(keyText, keyX, y);
+                    doc.setFont("helvetica", "normal");
+                    doc.setTextColor(...C.black);
+                    doc.text(valLines, valX, y);
+                    y += needed;
+                }
 
-                    try {
-                        const imgData = await loadImageAsDataUrl(images[i].url);
-                        if (imgData) {
-                            doc.addImage(imgData, "JPEG", x, y, maxW, imgH);
+                // ── Helper: checkbox item ──
+                function checkItem(label, checked, indent) {
+                    ensureSpace(7);
+                    const x = ml + (indent || 4);
+                    doc.setFontSize(8);
+                    // Draw checkbox
+                    doc.setDrawColor(...(checked ? C.green : C.slateL));
+                    doc.setLineWidth(0.4);
+                    doc.rect(x, y - 3, 3.5, 3.5);
+                    if (checked) {
+                        doc.setFillColor(...C.green);
+                        doc.rect(x + 0.6, y - 2.4, 2.3, 2.3, "F");
+                    }
+                    doc.setFont("helvetica", "normal");
+                    doc.setTextColor(...C.black);
+                    doc.text(label, x + 6, y);
+                    y += 5.5;
+                }
+
+                // ── Helper: status badge ──
+                function statusBadge(isComplete) {
+                    const label = isComplete ? "COMPLETE" : "PENDING";
+                    const col = isComplete ? C.green : C.slateL;
+                    doc.setFontSize(7);
+                    doc.setFont("helvetica", "bold");
+                    const tw = doc.getTextWidth(label) + 6;
+                    doc.setFillColor(...col);
+                    doc.roundedRect(pw - mr - tw - 2, y - 8.5, tw + 2, 6, 1.5, 1.5, "F");
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(label, pw - mr - tw + 1, y - 4.5);
+                }
+
+                // ── Helper: safely resolve an image URL and return data URL for PDF ──
+                async function getImageDataForPdf(imageObj) {
+                    if (!imageObj) return null;
+
+                    const candidateUrls = [];
+                    if (imageObj.url) candidateUrls.push(imageObj.url);
+
+                    const normalizedPath = normalizeStoragePath(imageObj.path || imageObj.url || "");
+                    if (normalizedPath) {
+                        try {
+                            const downloadUrl = await storage.ref().child(normalizedPath).getDownloadURL();
+                            if (downloadUrl) candidateUrls.push(downloadUrl);
+                        } catch (_) {
+                            // Ignore and continue trying other candidates
+                        }
+                    }
+
+                    const uniqueCandidates = Array.from(new Set(candidateUrls.filter(Boolean)));
+                    for (const candidate of uniqueCandidates) {
+                        try {
+                            const response = await fetch(candidate, { mode: "cors" });
+                            if (!response.ok) continue;
+
+                            const blob = await response.blob();
+                            const dataUrl = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.onerror = reject;
+                                reader.readAsDataURL(blob);
+                            });
+
+                            if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
+                                return dataUrl;
+                            }
+                        } catch (_) {
+                            // Try next candidate
+                        }
+                    }
+
+                    return null;
+                }
+
+                // ── Helper: embed images in a grid (max 3 per row) ──
+                async function embedImages(images, maxW) {
+                    if (!images || images.length === 0) return;
+                    maxW = maxW || 45;
+                    const gap = 4;
+                    const perRow = Math.min(3, Math.floor(cw / (maxW + gap)));
+                    const imgH = maxW * 0.75;
+
+                    for (let i = 0; i < images.length; i++) {
+                        if (i % perRow === 0) ensureSpace(imgH + 12);
+                        const col = i % perRow;
+                        const x = ml + col * (maxW + gap);
+
+                        try {
+                            const imgData = await getImageDataForPdf(images[i]);
+                            if (imgData) {
+                                const format = imgData.startsWith("data:image/png") ? "PNG" : "JPEG";
+                                doc.addImage(imgData, format, x, y, maxW, imgH);
+                            } else {
+                                doc.setFillColor(...C.bg);
+                                doc.rect(x, y, maxW, imgH, "F");
+                                doc.setDrawColor(...C.border);
+                                doc.rect(x, y, maxW, imgH);
+                                doc.setFontSize(6);
+                                doc.setTextColor(...C.slateL);
+                                doc.text(["Image unavailable", "(failed to load)"], x + 3, y + (imgH / 2) - 1);
+                            }
+
                             // Border
                             doc.setDrawColor(...C.border);
                             doc.setLineWidth(0.3);
                             doc.rect(x, y, maxW, imgH);
+                        } catch (_) {
+                            // Draw placeholder
+                            doc.setFillColor(...C.bg);
+                            doc.rect(x, y, maxW, imgH, "F");
+                            doc.setDrawColor(...C.border);
+                            doc.rect(x, y, maxW, imgH);
+                            doc.setFontSize(6);
+                            doc.setTextColor(...C.slateL);
+                            doc.text(["Image unavailable", "(failed to render)"], x + 3, y + (imgH / 2) - 1);
                         }
-                    } catch (e) {
-                        // Draw placeholder
-                        doc.setFillColor(...C.bg);
-                        doc.rect(x, y, maxW, imgH, "F");
-                        doc.setDrawColor(...C.border);
-                        doc.rect(x, y, maxW, imgH);
-                        doc.setFontSize(6);
-                        doc.setTextColor(...C.slateL);
-                        doc.text("Image unavailable", x + 4, y + imgH / 2);
-                    }
 
-                    // Caption
-                    const caption = images[i].name || images[i].path?.split("/").pop() || "";
-                    if (caption && caption !== "Image Log") {
-                        doc.setFontSize(5.5);
-                        doc.setFont("helvetica", "italic");
-                        doc.setTextColor(...C.slateL);
-                        doc.text(caption.substring(0, 30), x, y + imgH + 3.5);
-                    }
+                        // Caption
+                        const caption = images[i].name || images[i].path?.split("/").pop() || "";
+                        if (caption && caption !== "Image Log") {
+                            doc.setFontSize(5.5);
+                            doc.setFont("helvetica", "italic");
+                            doc.setTextColor(...C.slateL);
+                            const capLines = doc.splitTextToSize(caption, maxW);
+                            doc.text(capLines.slice(0, 2), x, y + imgH + 3.5);
+                        }
 
-                    if (col === perRow - 1 || i === images.length - 1) {
-                        y += imgH + 8;
+                        if (col === perRow - 1 || i === images.length - 1) {
+                            y += imgH + 8;
+                        }
                     }
                 }
-            }
 
-            // ── Helper: load image as data URL via canvas ──
-            function loadImageAsDataUrl(url) {
-                return new Promise((resolve) => {
-                    if (!url) return resolve(null);
-                    const img = new Image();
-                    img.crossOrigin = "anonymous";
-                    img.onload = () => {
-                        const canvas = document.createElement("canvas");
-                        const MAX = 600;
-                        let w = img.width, h = img.height;
-                        if (w > MAX) { h = h * MAX / w; w = MAX; }
-                        if (h > MAX) { w = w * MAX / h; h = MAX; }
-                        canvas.width = w;
-                        canvas.height = h;
-                        const ctx = canvas.getContext("2d");
-                        ctx.drawImage(img, 0, 0, w, h);
-                        resolve(canvas.toDataURL("image/jpeg", 0.85));
-                    };
-                    img.onerror = () => resolve(null);
-                    img.src = url;
-                });
-            }
-
-            // ── Collect team members ──
-            function getTeamMembers() {
-                const members = new Set();
-                for (let i = 1; i <= 7; i++) {
-                    const g = data["g" + i];
-                    if (g && g.by) members.add(g.by);
-                }
-                return Array.from(members);
-            }
-
-            // ── Get date range ──
-            function getDateRange() {
-                let earliest = null, latest = null;
-                for (let i = 1; i <= 7; i++) {
-                    const g = data["g" + i];
-                    if (g && g.time) {
-                        if (!earliest) earliest = g.time;
-                        latest = g.time;
+                // ── Collect team members ──
+                function getTeamMembers() {
+                    const members = new Set();
+                    for (let i = 1; i <= 7; i++) {
+                        const g = data["g" + i];
+                        if (g && g.by) members.add(g.by);
                     }
+                    return Array.from(members);
                 }
-                return { start: earliest || "—", end: latest || "—" };
-            }
+
+                // ── Get date range ──
+                function getDateRange() {
+                    let earliest = null, latest = null;
+                    for (let i = 1; i <= 7; i++) {
+                        const g = data["g" + i];
+                        if (g && g.time) {
+                            if (!earliest) earliest = g.time;
+                            latest = g.time;
+                        }
+                    }
+                    return { start: earliest || "—", end: latest || "—" };
+                }
 
             // ══════════════════════════════════════════
             //              TITLE PAGE
@@ -1820,42 +1892,52 @@ This copies Firestore data only. Existing image files remain in their current Fi
             doc.setFontSize(9);
             doc.setTextColor(...C.slate);
             const notesText = getBatchNotes(data) || "—";
+            const metaLabelX = ml + 22;
+            const metaValueX = ml + 50;
+            const metaValueMaxW = (ml + 10 + (cw - 20)) - 6 - metaValueX;
+            const notesLines = doc.splitTextToSize(notesText, metaValueMaxW);
+
             doc.setFont("helvetica", "bold");
-            doc.text("Notes:", ml + 22, ty);
+            doc.text("Notes:", metaLabelX, ty);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(...C.black);
-            doc.text(notesText, ml + 50, ty);
+            doc.text(notesLines, metaValueX, ty);
 
-            ty += 8;
+            ty += Math.max(8, notesLines.length * 4);
             const dates = getDateRange();
             doc.setFont("helvetica", "bold");
             doc.setTextColor(...C.slate);
-            doc.text("Date Range:", ml + 22, ty);
+            doc.text("Date Range:", metaLabelX, ty);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(...C.black);
-            doc.text(`${dates.start}  →  ${dates.end}`, ml + 50, ty);
+            const dateLines = doc.splitTextToSize(`${dates.start}  →  ${dates.end}`, metaValueMaxW);
+            doc.text(dateLines, metaValueX, ty);
 
-            ty += 8;
+            ty += Math.max(8, dateLines.length * 4);
             const team = getTeamMembers();
             doc.setFont("helvetica", "bold");
             doc.setTextColor(...C.slate);
-            doc.text("Team:", ml + 22, ty);
+            doc.text("Team:", metaLabelX, ty);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(...C.black);
-            doc.text(team.length > 0 ? team.join(", ") : "—", ml + 50, ty);
+            const teamLines = doc.splitTextToSize(team.length > 0 ? team.join(", ") : "—", metaValueMaxW);
+            doc.text(teamLines, metaValueX, ty);
 
-            ty += 8;
+            ty += Math.max(8, teamLines.length * 4);
             const pathChoice = data.seedPath || "Not selected";
             const pathLabels = { direct: "Direct Seeding", expand: "Expansion", both: "Direct Seeding + Expansion" };
             doc.setFont("helvetica", "bold");
             doc.setTextColor(...C.slate);
-            doc.text("Path:", ml + 22, ty);
+            doc.text("Path:", metaLabelX, ty);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(...C.black);
-            doc.text(pathLabels[pathChoice] || pathChoice, ml + 50, ty);
+            const pathLines = doc.splitTextToSize(pathLabels[pathChoice] || pathChoice, metaValueMaxW);
+            doc.text(pathLines, metaValueX, ty);
+
+            ty += Math.max(8, pathLines.length * 4);
 
             // Summary overview table
-            const summaryY = boxY + 95;
+            const summaryY = Math.max(boxY + 95, ty + 8);
             doc.setFont("helvetica", "bold");
             doc.setFontSize(10);
             doc.setTextColor(...C.primary);
@@ -1985,19 +2067,21 @@ This copies Firestore data only. Existing image files remain in their current Fi
 
                 // Gate 4 special: MACS data
                 if (gateNum === 4) {
-                    ensureSpace(50);
-                    doc.setFont("helvetica", "bold");
-                    doc.setFontSize(8.5);
-                    doc.setTextColor(...C.primary);
-                    doc.text("Isolation Data", ml + 2, y);
-                    y += 6;
-
                     const pups = g ? (g.pups || "—") : "—";
                     const preC = g && g.pre ? g.pre.c : "";
                     const preV = g && g.pre ? g.pre.v : "";
                     const postC = g && g.post ? g.post.c : "";
                     const postV = g && g.post ? g.post.v : "";
-                    const cpp = g ? (g.cpp || "—") : "—";
+
+                    const pupsNum = parseNumeric(pups);
+                    const preCNum = parseNumeric(preC);
+                    const postCNum = parseNumeric(postC);
+                    const storedCppNum = parseNumeric(g ? g.cpp : "");
+                    const computedCppNum = (Number.isFinite(postCNum) && Number.isFinite(pupsNum) && pupsNum > 0)
+                        ? Math.round(postCNum / pupsNum)
+                        : NaN;
+                    const cppNum = Number.isFinite(computedCppNum) ? computedCppNum : storedCppNum;
+                    const cppDisplay = Number.isFinite(cppNum) ? fmtNum(cppNum) : "—";
 
                     // Data table
                     doc.autoTable({
@@ -2009,7 +2093,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
                             ["Pre-MACS Viability", preV ? `${preV}%` : "—"],
                             ["Post-MACS Cell Count (O4+)", fmtNum(postC)],
                             ["Post-MACS Viability", postV ? `${postV}%` : "—"],
-                            ["Yield per Pup (Post-MACS)", fmtNum(cpp)],
+                            ["Yield per Pup (Post-MACS)", cppDisplay],
                         ],
                         theme: "striped",
                         margin: { left: ml + 2, right: mr + 30 },
@@ -2023,8 +2107,8 @@ This copies Firestore data only. Existing image files remain in their current Fi
                     y = doc.lastAutoTable.finalY + 6;
 
                     // MACS efficiency calculation
-                    if (preC && postC && parseFloat(preC) > 0) {
-                        const efficiency = ((parseFloat(postC) / parseFloat(preC)) * 100).toFixed(1);
+                    if (Number.isFinite(preCNum) && preCNum > 0 && Number.isFinite(postCNum)) {
+                        const efficiency = ((postCNum / preCNum) * 100).toFixed(1);
                         ensureSpace(12);
                         doc.setFillColor(240, 253, 244);
                         doc.roundedRect(ml + 2, y, cw - 4, 10, 2, 2, "F");
@@ -2034,7 +2118,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
                         doc.setFont("helvetica", "bold");
                         doc.setFontSize(9);
                         doc.setTextColor(...C.green);
-                        doc.text(`MACS Efficiency: ${efficiency}%  |  Yield/Pup: ${fmtNum(cpp)} cells`, ml + 8, y + 6.5);
+                        doc.text(`MACS Efficiency: ${efficiency}%  |  Yield/Pup: ${cppDisplay} cells`, ml + 8, y + 6.5);
                         y += 14;
                     }
 
@@ -2160,6 +2244,15 @@ This copies Firestore data only. Existing image files remain in their current Fi
             // ── Save ──
             const filename = `OL-Pipeline-${batchId.toUpperCase().replace(/\s+/g, "-")}.pdf`;
             doc.save(filename);
+            } catch (err) {
+                console.error("[pdf-export] failed", err);
+                alert("Failed to generate PDF. Please try again.");
+            } finally {
+                if (exportBtn) {
+                    exportBtn.disabled = false;
+                    exportBtn.textContent = originalExportBtnText || "Export Lab Report (PDF)";
+                }
+            }
         }
 
     </script>
