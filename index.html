@@ -70,6 +70,109 @@
             .progress-step .step-label-short { display: block; }
             .progress-step:not(:last-child)::after { top: 12px; left: calc(50% + 15px); right: calc(-50% + 15px); }
         }
+
+        /* ── Image Lightbox ── */
+        #imageLightbox {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 120;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+            padding: 1rem;
+        }
+        #imageLightbox.open {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+        .lightbox-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.9);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .lightbox-content {
+            position: relative;
+            z-index: 1;
+            width: min(96vw, 1200px);
+            max-height: 96vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            transform: translateY(14px) scale(0.98);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        #imageLightbox.open .lightbox-content {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        #lightboxImage {
+            max-width: 90vw;
+            max-height: 84vh;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            border-radius: 0.75rem;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .lightbox-caption {
+            color: rgba(241, 245, 249, 0.95);
+            text-align: center;
+            font-size: 0.82rem;
+            font-weight: 700;
+            line-height: 1.35;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+            max-width: min(88vw, 980px);
+            word-break: break-word;
+            min-height: 1.1rem;
+        }
+        .lightbox-close {
+            position: absolute;
+            top: -0.2rem;
+            right: max(0rem, calc(5vw - 0.5rem));
+            width: 42px;
+            height: 42px;
+            border-radius: 9999px;
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            background: rgba(15, 23, 42, 0.58);
+            color: #fff;
+            font-size: 1.75rem;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+        .lightbox-close:hover,
+        .lightbox-close:focus-visible {
+            background: rgba(30, 41, 59, 0.92);
+            transform: scale(1.06);
+            outline: none;
+        }
+        .lightbox-open-body {
+            overflow: hidden;
+            touch-action: none;
+        }
+        @media (max-width: 640px) {
+            #lightboxImage { max-height: 78vh; }
+            .lightbox-close {
+                top: -0.35rem;
+                right: 0;
+                width: 40px;
+                height: 40px;
+            }
+            .lightbox-caption { font-size: 0.75rem; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen pb-20 font-sans text-slate-900">
@@ -428,6 +531,15 @@
         </div>
     </div>
 
+    <div id="imageLightbox" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Image preview">
+        <div class="lightbox-overlay" data-lightbox-close="true"></div>
+        <div class="lightbox-content" role="document">
+            <button class="lightbox-close" type="button" aria-label="Close image preview">×</button>
+            <img id="lightboxImage" src="" alt="Full-size uploaded image">
+            <div class="lightbox-caption" id="lightboxCaption" aria-live="polite"></div>
+        </div>
+    </div>
+
     <script>
         // --- 1. FIREBASE CONFIG ---
         const firebaseConfig = {
@@ -484,6 +596,13 @@
         const deleteBatchErrorEl = document.getElementById("deleteBatchError");
         const deleteBatchCancelBtn = document.getElementById("deleteBatchCancelBtn");
         const deleteBatchConfirmBtn = document.getElementById("deleteBatchConfirmBtn");
+        const imageLightboxEl = document.getElementById("imageLightbox");
+        const lightboxImageEl = document.getElementById("lightboxImage");
+        const lightboxCaptionEl = document.getElementById("lightboxCaption");
+        const lightboxCloseBtnEl = imageLightboxEl ? imageLightboxEl.querySelector(".lightbox-close") : null;
+
+        let lastLightboxTrigger = null;
+        let isLightboxOpen = false;
 
         function normalizeBatchId(v) {
             return String(v || "").trim();
@@ -1186,6 +1305,123 @@ This copies Firestore data only. Existing image files remain in their current Fi
             };
         });
 
+        function getLightboxFocusableElements() {
+            if (!imageLightboxEl) return [];
+            return Array.from(imageLightboxEl.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+                .filter(el => !el.disabled && el.offsetParent !== null);
+        }
+
+        function getImageCaptionFromThumb(imgEl) {
+            if (!imgEl) return "";
+            if (imgEl.dataset.lightboxCaption) return imgEl.dataset.lightboxCaption;
+
+            const wrap = imgEl.closest(".img-wrap");
+            const inputCaption = wrap ? wrap.querySelector("input") : null;
+            if (inputCaption && inputCaption.value.trim()) return inputCaption.value.trim();
+
+            const refWrap = imgEl.closest(".ref-thumb");
+            if (refWrap && refWrap.dataset.cloudpath) {
+                const file = refWrap.dataset.cloudpath.split("/").pop() || "";
+                return decodeURIComponent(file.replace(/^\d+_/, ""));
+            }
+
+            if (imgEl.alt && imgEl.alt.trim() && imgEl.alt.trim().toLowerCase() !== "ref") {
+                return imgEl.alt.trim();
+            }
+
+            try {
+                const srcUrl = new URL(imgEl.currentSrc || imgEl.src, window.location.href);
+                const fileName = srcUrl.pathname.split("/").pop() || "Uploaded image";
+                return decodeURIComponent(fileName);
+            } catch {
+                return "Uploaded image";
+            }
+        }
+
+        function openLightbox(imageSrc, caption = "") {
+            if (!imageLightboxEl || !lightboxImageEl) return;
+            if (!imageSrc) return;
+
+            lightboxImageEl.src = imageSrc;
+            const cleanCaption = String(caption || "").trim();
+            lightboxImageEl.alt = cleanCaption || "Full-size uploaded image";
+            if (lightboxCaptionEl) {
+                lightboxCaptionEl.textContent = cleanCaption;
+                lightboxCaptionEl.classList.toggle("hidden", !cleanCaption);
+            }
+
+            imageLightboxEl.classList.add("open");
+            imageLightboxEl.setAttribute("aria-hidden", "false");
+            document.body.classList.add("lightbox-open-body");
+            isLightboxOpen = true;
+
+            requestAnimationFrame(() => {
+                if (lightboxCloseBtnEl) lightboxCloseBtnEl.focus();
+            });
+        }
+
+        function closeLightbox() {
+            if (!imageLightboxEl || !isLightboxOpen) return;
+            imageLightboxEl.classList.remove("open");
+            imageLightboxEl.setAttribute("aria-hidden", "true");
+            document.body.classList.remove("lightbox-open-body");
+            isLightboxOpen = false;
+
+            window.setTimeout(() => {
+                if (!isLightboxOpen && lightboxImageEl) {
+                    lightboxImageEl.removeAttribute("src");
+                }
+            }, 220);
+
+            if (lastLightboxTrigger && typeof lastLightboxTrigger.focus === "function") {
+                lastLightboxTrigger.focus({ preventScroll: true });
+            }
+            lastLightboxTrigger = null;
+        }
+
+        document.addEventListener("click", (e) => {
+            const closeTrigger = e.target.closest('[data-lightbox-close="true"], .lightbox-close');
+            if (closeTrigger && isLightboxOpen) {
+                e.preventDefault();
+                closeLightbox();
+                return;
+            }
+
+            const imgTarget = e.target.closest(".img-wrap img, .ref-thumb img");
+            if (!imgTarget) return;
+
+            e.preventDefault();
+            lastLightboxTrigger = imgTarget;
+            openLightbox(imgTarget.currentSrc || imgTarget.src, getImageCaptionFromThumb(imgTarget));
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if (!isLightboxOpen) return;
+
+            if (e.key === "Escape") {
+                e.preventDefault();
+                closeLightbox();
+                return;
+            }
+
+            if (e.key === "Tab") {
+                const focusables = getLightboxFocusableElements();
+                if (focusables.length === 0) {
+                    e.preventDefault();
+                    return;
+                }
+                const first = focusables[0];
+                const last = focusables[focusables.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        });
+
         // --- 2. THE IMAGE ENGINE ---
         document.querySelectorAll(".img-input").forEach(inp => {
             inp.onchange = async e => {
@@ -1228,7 +1464,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
             div.dataset.cloudpath = path;
             div.innerHTML = `
                 <div class="relative overflow-hidden rounded-xl border-2 border-white shadow-sm aspect-square">
-                    <img src="${url}" class="w-full h-full object-cover">
+                    <img src="${url}" alt="${name || "Uploaded image"}" class="w-full h-full object-cover cursor-zoom-in" loading="lazy">
                     <button onclick="delFile(this)" class="del-btn opacity-0 absolute top-1 right-1 bg-black/70 text-white w-5 h-5 rounded-full text-xs flex items-center justify-center transition">×</button>
                 </div>
                 <input type="text" value="${name}" class="text-[8px] font-black uppercase text-center bg-transparent border-none outline-none text-slate-400 hover:text-indigo-600 truncate px-1">
@@ -1265,7 +1501,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
                         await ref.put(file);
                         const url = await ref.getDownloadURL();
                         temp.innerHTML = `
-                            <img src="${url}" alt="ref">
+                            <img src="${url}" alt="Reference image" class="cursor-zoom-in" loading="lazy">
                             <button onclick="delRefFile(this, '${path}')" class="del-btn">×</button>
                         `;
                         temp.dataset.cloudpath = path;
@@ -1301,7 +1537,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
                         thumb.className = "ref-thumb";
                         thumb.dataset.cloudpath = d.path;
                         thumb.innerHTML = `
-                            <img src="${d.url}" alt="ref">
+                            <img src="${d.url}" alt="Reference image" class="cursor-zoom-in" loading="lazy">
                             <button onclick="delRefFile(this, '${d.path}')" class="del-btn">×</button>
                         `;
                         grid.appendChild(thumb);
@@ -1555,9 +1791,14 @@ This copies Firestore data only. Existing image files remain in their current Fi
             const exportBtn = document.getElementById("exportPdfBtn");
             const originalExportBtnText = exportBtn ? exportBtn.textContent : "";
 
+            function setExportButtonStatus(text) {
+                if (!exportBtn) return;
+                exportBtn.textContent = text;
+            }
+
             if (exportBtn) {
                 exportBtn.disabled = true;
-                exportBtn.textContent = "Generating PDF…";
+                setExportButtonStatus("Generating PDF…");
             }
 
             try {
@@ -1724,11 +1965,108 @@ This copies Firestore data only. Existing image files remain in their current Fi
                     doc.text(label, pw - mr - tw + 1, y - 4.5);
                 }
 
-                // ── Helper: safely resolve an image URL and return data URL for PDF ──
-                async function getImageDataForPdf(imageObj) {
-                    if (!imageObj) return null;
+                // ── Image loading state for progress + diagnostics ──
+                const imageLoadState = {
+                    total: 0,
+                    completed: 0,
+                    succeeded: 0,
+                    failed: 0,
+                    startedAt: Date.now(),
+                };
 
+                function updateImageLoadProgress(label) {
+                    if (imageLoadState.total <= 0) return;
+                    const elapsedSec = Math.max(0, Math.round((Date.now() - imageLoadState.startedAt) / 1000));
+                    const base = `Loading images... (${imageLoadState.completed}/${imageLoadState.total})`;
+                    const suffix = label ? ` ${label}` : "";
+                    setExportButtonStatus(`${base}${suffix}`);
+                    console.log("[pdf-export][progress]", {
+                        completed: imageLoadState.completed,
+                        total: imageLoadState.total,
+                        succeeded: imageLoadState.succeeded,
+                        failed: imageLoadState.failed,
+                        elapsedSec,
+                    });
+                }
+
+                function classifyImageLoadError(err) {
+                    if (!err) return "unknown";
+                    const raw = String(err.message || err.code || err.name || err).toLowerCase();
+                    if (raw.includes("timeout")) return "timeout";
+                    if (raw.includes("cors") || raw.includes("taint") || raw.includes("security")) return "cors/security";
+                    if (raw.includes("403") || raw.includes("unauthorized") || raw.includes("auth")) return "auth";
+                    if (raw.includes("404") || raw.includes("not found")) return "not_found";
+                    if (raw.includes("network")) return "network";
+                    return "load_error";
+                }
+
+                function loadImageAsDataURL(url, timeoutMs) {
+                    return new Promise((resolve, reject) => {
+                        const img = new Image();
+                        let done = false;
+
+                        const timer = setTimeout(() => {
+                            if (done) return;
+                            done = true;
+                            reject(new Error(`timeout after ${timeoutMs}ms`));
+                        }, timeoutMs);
+
+                        img.crossOrigin = "anonymous";
+                        img.decoding = "async";
+
+                        img.onload = () => {
+                            if (done) return;
+                            done = true;
+                            clearTimeout(timer);
+
+                            try {
+                                const canvas = document.createElement("canvas");
+                                canvas.width = img.naturalWidth || img.width;
+                                canvas.height = img.naturalHeight || img.height;
+                                const ctx = canvas.getContext("2d");
+                                if (!ctx) throw new Error("canvas context unavailable");
+                                ctx.drawImage(img, 0, 0);
+
+                                let dataUrl = "";
+                                try {
+                                    dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+                                } catch (canvasErr) {
+                                    const secErr = new Error(`CORS/security error while converting image: ${canvasErr.message || canvasErr}`);
+                                    secErr.code = "CORS_CANVAS";
+                                    throw secErr;
+                                }
+
+                                if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+                                    throw new Error("invalid data URL output");
+                                }
+
+                                resolve(dataUrl);
+                            } catch (drawErr) {
+                                reject(drawErr);
+                            }
+                        };
+
+                        img.onerror = (e) => {
+                            if (done) return;
+                            done = true;
+                            clearTimeout(timer);
+                            reject(new Error(`image element failed to load (${e?.type || "unknown"})`));
+                        };
+
+                        img.src = url;
+                    });
+                }
+
+                // ── Helper: safely resolve an image URL and return data URL for PDF ──
+                async function getImageDataForPdf(imageObj, options) {
+                    if (!imageObj) {
+                        return { dataUrl: null, sourceUrl: null, error: "missing_image_object" };
+                    }
+
+                    const timeoutMs = (options && options.timeoutMs) || 30000;
+                    const imageLabel = imageObj.name || imageObj.path || imageObj.url || "unnamed-image";
                     const candidateUrls = [];
+
                     if (imageObj.url) candidateUrls.push(imageObj.url);
 
                     const normalizedPath = normalizeStoragePath(imageObj.path || imageObj.url || "");
@@ -1736,34 +2074,56 @@ This copies Firestore data only. Existing image files remain in their current Fi
                         try {
                             const downloadUrl = await storage.ref().child(normalizedPath).getDownloadURL();
                             if (downloadUrl) candidateUrls.push(downloadUrl);
-                        } catch (_) {
-                            // Ignore and continue trying other candidates
+                        } catch (storageErr) {
+                            console.warn("[pdf-export][image] getDownloadURL failed", {
+                                imageLabel,
+                                normalizedPath,
+                                error: storageErr?.message || String(storageErr),
+                            });
                         }
                     }
 
                     const uniqueCandidates = Array.from(new Set(candidateUrls.filter(Boolean)));
+                    console.log("[pdf-export][image] candidates", {
+                        imageLabel,
+                        normalizedPath,
+                        candidates: uniqueCandidates,
+                    });
+
+                    if (uniqueCandidates.length === 0) {
+                        return { dataUrl: null, sourceUrl: null, error: "no_candidate_urls" };
+                    }
+
+                    const errors = [];
                     for (const candidate of uniqueCandidates) {
+                        const startedAt = Date.now();
                         try {
-                            const response = await fetch(candidate, { mode: "cors" });
-                            if (!response.ok) continue;
-
-                            const blob = await response.blob();
-                            const dataUrl = await new Promise((resolve, reject) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result);
-                                reader.onerror = reject;
-                                reader.readAsDataURL(blob);
+                            const dataUrl = await loadImageAsDataURL(candidate, timeoutMs);
+                            console.log("[pdf-export][image] loaded", {
+                                imageLabel,
+                                candidate,
+                                durationMs: Date.now() - startedAt,
                             });
-
-                            if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
-                                return dataUrl;
-                            }
-                        } catch (_) {
-                            // Try next candidate
+                            return { dataUrl, sourceUrl: candidate, error: null };
+                        } catch (err) {
+                            const reason = classifyImageLoadError(err);
+                            const detail = err?.message || String(err);
+                            errors.push(`${reason}: ${detail}`);
+                            console.warn("[pdf-export][image] candidate failed", {
+                                imageLabel,
+                                candidate,
+                                reason,
+                                detail,
+                                durationMs: Date.now() - startedAt,
+                            });
                         }
                     }
 
-                    return null;
+                    return {
+                        dataUrl: null,
+                        sourceUrl: uniqueCandidates[0] || null,
+                        error: errors.join(" | ") || "unknown_image_error",
+                    };
                 }
 
                 // ── Helper: embed images in a grid (max 3 per row) ──
@@ -1771,46 +2131,68 @@ This copies Firestore data only. Existing image files remain in their current Fi
                     if (!images || images.length === 0) return;
                     maxW = maxW || 45;
                     const gap = 4;
-                    const perRow = Math.min(3, Math.floor(cw / (maxW + gap)));
+                    const perRow = Math.max(1, Math.min(3, Math.floor(cw / (maxW + gap))));
                     const imgH = maxW * 0.75;
+
+                    imageLoadState.total += images.length;
+                    updateImageLoadProgress();
 
                     for (let i = 0; i < images.length; i++) {
                         if (i % perRow === 0) ensureSpace(imgH + 12);
                         const col = i % perRow;
                         const x = ml + col * (maxW + gap);
 
+                        const imageObj = images[i];
+                        const imageLabel = imageObj?.name || imageObj?.path || imageObj?.url || `image-${i + 1}`;
+                        const result = await getImageDataForPdf(imageObj, { timeoutMs: 30000 });
+
+                        imageLoadState.completed += 1;
+                        if (result.dataUrl) imageLoadState.succeeded += 1;
+                        else imageLoadState.failed += 1;
+
                         try {
-                            const imgData = await getImageDataForPdf(images[i]);
-                            if (imgData) {
-                                const format = imgData.startsWith("data:image/png") ? "PNG" : "JPEG";
-                                doc.addImage(imgData, format, x, y, maxW, imgH);
+                            if (result.dataUrl) {
+                                const format = result.dataUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+                                doc.addImage(result.dataUrl, format, x, y, maxW, imgH);
                             } else {
+                                const reason = classifyImageLoadError(result.error);
                                 doc.setFillColor(...C.bg);
                                 doc.rect(x, y, maxW, imgH, "F");
                                 doc.setDrawColor(...C.border);
                                 doc.rect(x, y, maxW, imgH);
                                 doc.setFontSize(6);
                                 doc.setTextColor(...C.slateL);
-                                doc.text(["Image unavailable", "(failed to load)"], x + 3, y + (imgH / 2) - 1);
+                                doc.text(["Image unavailable", `(${reason})`], x + 3, y + (imgH / 2) - 1);
+                                console.warn("[pdf-export][image] final fallback used", {
+                                    imageLabel,
+                                    reason,
+                                    error: result.error,
+                                    sourceUrl: result.sourceUrl,
+                                });
                             }
 
                             // Border
                             doc.setDrawColor(...C.border);
                             doc.setLineWidth(0.3);
                             doc.rect(x, y, maxW, imgH);
-                        } catch (_) {
-                            // Draw placeholder
+                        } catch (renderErr) {
+                            console.error("[pdf-export][image] render failed", {
+                                imageLabel,
+                                error: renderErr?.message || String(renderErr),
+                            });
                             doc.setFillColor(...C.bg);
                             doc.rect(x, y, maxW, imgH, "F");
                             doc.setDrawColor(...C.border);
                             doc.rect(x, y, maxW, imgH);
                             doc.setFontSize(6);
                             doc.setTextColor(...C.slateL);
-                            doc.text(["Image unavailable", "(failed to render)"], x + 3, y + (imgH / 2) - 1);
+                            doc.text(["Image unavailable", "(render error)"], x + 3, y + (imgH / 2) - 1);
                         }
 
+                        updateImageLoadProgress(imageLoadState.failed > 0 ? `• failed: ${imageLoadState.failed}` : "");
+
                         // Caption
-                        const caption = images[i].name || images[i].path?.split("/").pop() || "";
+                        const caption = imageObj?.name || imageObj?.path?.split("/").pop() || "";
                         if (caption && caption !== "Image Log") {
                             doc.setFontSize(5.5);
                             doc.setFont("helvetica", "italic");
@@ -2240,6 +2622,17 @@ This copies Firestore data only. Existing image files remain in their current Fi
             kvLine("Report Generated", new Date().toLocaleString("en-GB"));
 
             addFooter();
+
+            const totalImageLoadSec = Math.round((Date.now() - imageLoadState.startedAt) / 1000);
+            console.log("[pdf-export][summary]", {
+                batchId,
+                totalImages: imageLoadState.total,
+                loaded: imageLoadState.succeeded,
+                failed: imageLoadState.failed,
+                durationSec: totalImageLoadSec,
+            });
+
+            setExportButtonStatus("Finalizing PDF…");
 
             // ── Save ──
             const filename = `OL-Pipeline-${batchId.toUpperCase().replace(/\s+/g, "-")}.pdf`;
