@@ -34,6 +34,11 @@
         .batch-create:hover, .batch-create:focus-visible { background: #d1fae5; }
         .batch-muted { color: #64748b; font-size: 11px; }
         .rename-batch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .delete-batch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        /* ── Delete Batch Modal ── */
+        .danger-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.58); backdrop-filter: blur(1px); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+        .danger-modal-card { width: 100%; max-width: 680px; background: #fff; border: 1px solid #fecaca; border-radius: 1.25rem; overflow: hidden; box-shadow: 0 24px 48px rgba(15, 23, 42, 0.35); }
 
         /* ── Progress Bar ── */
         .progress-bar { display: flex; align-items: flex-start; justify-content: center; overflow-x: auto; padding: 0 0.5rem; }
@@ -91,9 +96,14 @@
                 <div>
                     <div class="flex items-center justify-between gap-2 ml-1 mb-1">
                         <label class="text-[10px] font-black uppercase text-slate-400">Experiment Batch ID</label>
-                        <button id="renameBatchBtn" type="button" class="rename-batch-btn inline-flex items-center gap-1 text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg hover:bg-indigo-100 transition" disabled>
-                            <i data-lucide="pencil" size="12"></i> Rename Batch
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button id="renameBatchBtn" type="button" class="rename-batch-btn inline-flex items-center gap-1 text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg hover:bg-indigo-100 transition" disabled>
+                                <i data-lucide="pencil" size="12"></i> Rename Batch
+                            </button>
+                            <button id="deleteBatchBtn" type="button" class="delete-batch-btn inline-flex items-center gap-1 text-[10px] font-black uppercase text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-100 transition" disabled>
+                                <i data-lucide="trash-2" size="12"></i> Delete Batch
+                            </button>
+                        </div>
                     </div>
                     <div class="relative">
                         <input type="text" id="batchId" autocomplete="off" placeholder="e.g. rOPC-V4-1W-20260414" class="w-full bg-slate-50 p-4 rounded-2xl text-xl font-black outline-none border-2 border-transparent focus:border-indigo-500 transition">
@@ -380,6 +390,44 @@
 
     </main>
 
+    <div id="deleteBatchModal" class="danger-modal-backdrop hidden" aria-hidden="true">
+        <div class="danger-modal-card">
+            <div class="px-6 py-4 border-b border-red-200 bg-red-50">
+                <h3 class="text-lg font-black text-red-700 flex items-center gap-2"><i data-lucide="triangle-alert" size="18"></i> Delete Batch</h3>
+            </div>
+            <div class="p-6 space-y-4 text-sm font-semibold text-slate-700">
+                <p>You are about to permanently delete:</p>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <div class="text-[11px] uppercase font-black text-slate-500">Batch ID</div>
+                    <div id="deleteBatchCurrentId" class="text-base font-black text-slate-900 break-all">—</div>
+                </div>
+
+                <div class="bg-red-50 border border-red-200 rounded-xl p-3">
+                    <div class="text-[11px] uppercase font-black text-red-600 mb-1">This will delete</div>
+                    <ul class="list-disc list-inside text-[12px] text-red-700 space-y-1">
+                        <li>All gate data (1–7)</li>
+                        <li>All image references stored in this batch document</li>
+                        <li>All notes and timestamps</li>
+                        <li>Complete experiment record for this batch</li>
+                    </ul>
+                    <p class="mt-2 text-[12px] font-black text-red-700">This action cannot be undone.</p>
+                </div>
+
+                <div>
+                    <label for="deleteBatchConfirmInput" class="block text-[11px] uppercase font-black text-slate-500 mb-1">To confirm, type the exact batch ID</label>
+                    <input id="deleteBatchConfirmInput" type="text" autocomplete="off" class="w-full bg-slate-50 p-3 rounded-xl text-sm font-black outline-none border-2 border-slate-200 focus:border-red-400 transition" placeholder="Type batch ID exactly">
+                    <p id="deleteBatchError" class="mt-2 text-[11px] font-black text-red-600 hidden"></p>
+                </div>
+
+                <p class="text-[11px] text-slate-500">After ID verification, you'll be asked one final “Are you sure?” confirmation.</p>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                <button id="deleteBatchCancelBtn" type="button" class="px-4 py-2 rounded-lg text-[11px] font-black uppercase border border-slate-300 text-slate-700 bg-white hover:bg-slate-100 transition">Cancel</button>
+                <button id="deleteBatchConfirmBtn" type="button" class="px-4 py-2 rounded-lg text-[11px] font-black uppercase text-white bg-red-600 hover:bg-red-700 transition inline-flex items-center gap-1"><i data-lucide="trash-2" size="14"></i> Delete Permanently</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // --- 1. FIREBASE CONFIG ---
         const firebaseConfig = {
@@ -399,6 +447,7 @@
         let batchListCache = [];
         let isBatchListLoading = false;
         let isRenameInProgress = false;
+        let isDeleteInProgress = false;
 
         function getLegacyStiffness(data) {
             if (!data) return "";
@@ -428,6 +477,13 @@
         const batchDropdownEl = document.getElementById("batchDropdown");
         const batchFeedbackEl = document.getElementById("batchFeedback");
         const renameBatchBtn = document.getElementById("renameBatchBtn");
+        const deleteBatchBtn = document.getElementById("deleteBatchBtn");
+        const deleteBatchModalEl = document.getElementById("deleteBatchModal");
+        const deleteBatchCurrentIdEl = document.getElementById("deleteBatchCurrentId");
+        const deleteBatchConfirmInputEl = document.getElementById("deleteBatchConfirmInput");
+        const deleteBatchErrorEl = document.getElementById("deleteBatchError");
+        const deleteBatchCancelBtn = document.getElementById("deleteBatchCancelBtn");
+        const deleteBatchConfirmBtn = document.getElementById("deleteBatchConfirmBtn");
 
         function normalizeBatchId(v) {
             return String(v || "").trim();
@@ -588,9 +644,109 @@
         }
 
         function setRenameButtonState(enabled, label) {
-            renameBatchBtn.disabled = !enabled || isRenameInProgress;
+            renameBatchBtn.disabled = !enabled || isRenameInProgress || isDeleteInProgress;
             renameBatchBtn.innerHTML = `<i data-lucide="pencil" size="12"></i> ${label || "Rename Batch"}`;
             if (typeof lucide !== "undefined") lucide.createIcons();
+        }
+
+        function setDeleteButtonState(enabled, label) {
+            deleteBatchBtn.disabled = !enabled || isDeleteInProgress || isRenameInProgress;
+            deleteBatchBtn.innerHTML = `<i data-lucide="trash-2" size="12"></i> ${label || "Delete Batch"}`;
+            if (typeof lucide !== "undefined") lucide.createIcons();
+        }
+
+        function setDeleteDialogError(message) {
+            if (!message) {
+                deleteBatchErrorEl.classList.add("hidden");
+                deleteBatchErrorEl.textContent = "";
+                return;
+            }
+            deleteBatchErrorEl.classList.remove("hidden");
+            deleteBatchErrorEl.textContent = message;
+        }
+
+        function closeDeleteBatchDialog() {
+            if (isDeleteInProgress) return;
+            deleteBatchModalEl.classList.add("hidden");
+            deleteBatchModalEl.setAttribute("aria-hidden", "true");
+            setDeleteDialogError("");
+            deleteBatchConfirmInputEl.value = "";
+        }
+
+        function openDeleteBatchDialog() {
+            if (!batchId) {
+                alert("Load a batch before deleting.");
+                return;
+            }
+            deleteBatchCurrentIdEl.textContent = batchId;
+            deleteBatchConfirmInputEl.value = "";
+            setDeleteDialogError("");
+            deleteBatchModalEl.classList.remove("hidden");
+            deleteBatchModalEl.setAttribute("aria-hidden", "false");
+            setTimeout(() => deleteBatchConfirmInputEl.focus(), 0);
+        }
+
+        async function deleteBatchPermanently() {
+            if (!batchId) {
+                closeDeleteBatchDialog();
+                return alert("No batch selected.");
+            }
+            if (isDeleteInProgress) return;
+
+            const deletingId = normalizeBatchId(batchId);
+            const typedId = normalizeBatchId(deleteBatchConfirmInputEl.value);
+
+            if (!typedId || typedId !== deletingId) {
+                setDeleteDialogError("Batch ID doesn't match. Please type the exact ID.");
+                return;
+            }
+
+            const finalSure = confirm(`Are you sure you want to permanently delete batch "${deletingId}"?
+
+This action cannot be undone.`);
+            if (!finalSure) {
+                setDeleteDialogError("Deletion cancelled. Batch remains unchanged.");
+                return;
+            }
+
+            isDeleteInProgress = true;
+            setRenameButtonState(false, "Rename Batch");
+            setDeleteButtonState(false, "Deleting...");
+            setDeleteDialogError("");
+
+            try {
+                if (batchUnsubscribe) {
+                    batchUnsubscribe();
+                    batchUnsubscribe = null;
+                }
+
+                await db.collection("ol_pro").doc(deletingId).delete();
+
+                batchId = null;
+                batchInputEl.value = "";
+                resetBoardUI();
+                syncBatchMetaFields({});
+                updateProgressBar({});
+                document.getElementById("statusDot").className = "w-3 h-3 bg-yellow-500 rounded-full shadow-[0_0_10px_yellow]";
+
+                batchListCache = batchListCache.filter(b => normalizeBatchIdForCompare(b.id) !== normalizeBatchIdForCompare(deletingId));
+                await fetchBatchList(true);
+
+                closeDeleteBatchDialog();
+                setBatchFeedback(`Batch ${deletingId} has been deleted`, "success");
+                renderBatchDropdown("");
+                showBatchDropdown();
+                alert(`Batch ${deletingId} has been deleted ✅`);
+            } catch (err) {
+                const friendly = getFriendlyErrorMessage(err);
+                console.error("[deleteBatch] Delete failed", { deletingId, error: err });
+                setBatchFeedback(`Delete failed: ${friendly}`, "error");
+                setDeleteDialogError(`Delete failed: ${friendly}`);
+            } finally {
+                isDeleteInProgress = false;
+                setRenameButtonState(Boolean(batchId), "Rename Batch");
+                setDeleteButtonState(Boolean(batchId), "Delete Batch");
+            }
         }
 
         function resetBoardUI() {
@@ -749,6 +905,7 @@
             batchInputEl.value = nextId;
             setBatchFeedback("", "neutral");
             setRenameButtonState(false, "Rename Batch");
+            setDeleteButtonState(false, "Delete Batch");
 
             batchUnsubscribe = db.collection("ol_pro").doc(batchId).onSnapshot(doc => {
                 if (doc.exists) {
@@ -768,12 +925,14 @@
                         applyPathChoice(null);
                     }
                     setRenameButtonState(true, "Rename Batch");
+                    setDeleteButtonState(true, "Delete Batch");
                 } else {
                     document.getElementById("statusDot").className = "w-3 h-3 bg-yellow-500 rounded-full shadow-[0_0_10px_yellow]";
                     resetBoardUI();
                     syncBatchMetaFields({});
                     updateProgressBar({});
                     setRenameButtonState(false, "Rename Batch");
+                    setDeleteButtonState(false, "Delete Batch");
                     setBatchFeedback(`"${batchId}" is new. Start recording to create it.`, "neutral");
                 }
             }, err => {
@@ -813,6 +972,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
 
             isRenameInProgress = true;
             setRenameButtonState(false, "Renaming...");
+            setDeleteButtonState(false, "Delete Batch");
             setBatchFeedback("Renaming batch... please wait.", "neutral");
 
             try {
@@ -873,6 +1033,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
             } finally {
                 isRenameInProgress = false;
                 setRenameButtonState(Boolean(batchId), "Rename Batch");
+                setDeleteButtonState(Boolean(batchId), "Delete Batch");
             }
         }
 
@@ -947,6 +1108,18 @@ This copies Firestore data only. Existing image files remain in their current Fi
             });
 
             renameBatchBtn.addEventListener("click", renameBatch);
+            deleteBatchBtn.addEventListener("click", openDeleteBatchDialog);
+            deleteBatchCancelBtn.addEventListener("click", closeDeleteBatchDialog);
+            deleteBatchConfirmBtn.addEventListener("click", deleteBatchPermanently);
+            deleteBatchConfirmInputEl.addEventListener("input", () => setDeleteDialogError(""));
+            deleteBatchModalEl.addEventListener("mousedown", (e) => {
+                if (e.target === deleteBatchModalEl) closeDeleteBatchDialog();
+            });
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "Escape" && !deleteBatchModalEl.classList.contains("hidden")) {
+                    closeDeleteBatchDialog();
+                }
+            });
         }
 
         document.getElementById("notes").onchange = async e => {
@@ -1368,6 +1541,7 @@ This copies Firestore data only. Existing image files remain in their current Fi
         window.onload = async () => {
             lucide.createIcons();
             setupBatchInputHandlers();
+            setDeleteButtonState(false, "Delete Batch");
             await fetchBatchList(false);
             renderBatchDropdown("");
             hideBatchDropdown();
