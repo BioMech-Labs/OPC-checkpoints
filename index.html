@@ -430,7 +430,11 @@
         const renameBatchBtn = document.getElementById("renameBatchBtn");
 
         function normalizeBatchId(v) {
-            return String(v || "").trim().toLowerCase();
+            return String(v || "").trim();
+        }
+
+        function normalizeBatchIdForCompare(v) {
+            return normalizeBatchId(v).toLowerCase();
         }
 
         function setBatchFeedback(message, tone = "neutral") {
@@ -522,9 +526,10 @@
         }
 
         function renderBatchDropdown(query = "") {
-            const q = normalizeBatchId(query);
-            const batches = batchListCache.filter(b => !q || b.id.includes(q));
-            const exactMatch = batchListCache.some(b => b.id === q);
+            const qRaw = normalizeBatchId(query);
+            const qCmp = normalizeBatchIdForCompare(qRaw);
+            const batches = batchListCache.filter(b => !qCmp || normalizeBatchIdForCompare(b.id).includes(qCmp));
+            const exactMatch = batchListCache.some(b => normalizeBatchIdForCompare(b.id) === qCmp);
 
             if (isBatchListLoading) {
                 showBatchDropdown();
@@ -532,7 +537,7 @@
                 return;
             }
 
-            if (!batches.length && !q) {
+            if (!batches.length && !qRaw) {
                 showBatchDropdown();
                 batchDropdownEl.innerHTML = `<div class="p-3 text-[11px] font-bold text-slate-500">No existing batches yet.</div>`;
                 return;
@@ -548,10 +553,10 @@
                 `;
             });
 
-            if (q && !exactMatch) {
+            if (qRaw && !exactMatch) {
                 html += `
-                    <button type="button" class="batch-item batch-create" data-create-id="${q}">
-                        <div class="text-[12px] font-black">+ Create New Batch "${q}"</div>
+                    <button type="button" class="batch-item batch-create" data-create-id="${qRaw}">
+                        <div class="text-[12px] font-black">+ Create New Batch "${qRaw}"</div>
                         <div class="batch-muted !text-emerald-700">Press Enter or click to start recording this batch.</div>
                     </button>
                 `;
@@ -649,63 +654,12 @@
             loadAllReferenceImages();
         }
 
-        async function copyStorageObject(oldPath, newPath) {
-            const oldRef = storage.ref().child(oldPath);
-            const oldUrl = await oldRef.getDownloadURL();
-            const response = await fetch(oldUrl);
-            if (!response.ok) throw new Error(`Unable to fetch image blob for ${oldPath}`);
-            const blob = await response.blob();
-
-            let metadata = undefined;
-            try {
-                const oldMeta = await oldRef.getMetadata();
-                if (oldMeta && oldMeta.contentType) metadata = { contentType: oldMeta.contentType };
-            } catch (_) {}
-
-            const newRef = storage.ref().child(newPath);
-            await newRef.put(blob, metadata);
-            const newUrl = await newRef.getDownloadURL();
-            return newUrl;
-        }
-
-        async function migrateBatchStorageAssets(oldId, newId, clonedData) {
-            const oldPrefix = `ol/${oldId}/`;
-            const newPrefix = `ol/${newId}/`;
-            const createdPaths = [];
-            let migrated = 0;
-
-            try {
-                for (let i = 1; i <= 7; i++) {
-                    const gateKey = "g" + i;
-                    const g = clonedData[gateKey];
-                    if (!g) continue;
-
-                    Object.keys(g).forEach(k => {
-                        if (!k.startsWith("imgs_")) return;
-                        if (!Array.isArray(g[k])) g[k] = [];
-                    });
-
-                    for (const key of Object.keys(g)) {
-                        if (!key.startsWith("imgs_")) continue;
-                        const list = Array.isArray(g[key]) ? g[key] : [];
-
-                        for (const img of list) {
-                            if (!img || !img.path || !img.path.startsWith(oldPrefix)) continue;
-                            const newPath = newPrefix + img.path.slice(oldPrefix.length);
-                            const newUrl = await copyStorageObject(img.path, newPath);
-                            createdPaths.push(newPath);
-                            img.path = newPath;
-                            img.url = newUrl;
-                            migrated += 1;
-                        }
-                    }
-                }
-            } catch (err) {
-                await Promise.all(createdPaths.map(p => storage.ref().child(p).delete().catch(() => null)));
-                throw err;
-            }
-
-            return migrated;
+        function getFriendlyErrorMessage(err) {
+            if (!err) return "Unknown error";
+            if (typeof err === "string") return err;
+            const code = err.code ? ` (${err.code})` : "";
+            const msg = err.message || "Unknown error";
+            return `${msg}${code}`;
         }
 
         async function renameBatch() {
@@ -723,7 +677,7 @@
             const user = document.getElementById("userSelect").value;
             const confirmed = confirm(`Rename batch "${oldId}" to "${newId}"?
 
-This copies all gate data and images, then removes/archives the old ID.`);
+This copies Firestore data only. Existing image files remain in their current Firebase Storage paths, and image references are kept unchanged.`);
             if (!confirmed) return;
 
             isRenameInProgress = true;
@@ -731,16 +685,21 @@ This copies all gate data and images, then removes/archives the old ID.`);
             setBatchFeedback("Renaming batch... please wait.", "neutral");
 
             try {
+                console.log("[renameBatch] Starting rename", { oldId, newId, user });
                 const oldRef = db.collection("ol_pro").doc(oldId);
                 const newRef = db.collection("ol_pro").doc(newId);
                 const [oldSnap, newSnap] = await Promise.all([oldRef.get(), newRef.get()]);
+
+                console.log("[renameBatch] Snapshot status", {
+                    oldExists: oldSnap.exists,
+                    newExists: newSnap.exists
+                });
 
                 if (!oldSnap.exists) throw new Error("Current batch does not exist in Firestore.");
                 if (newSnap.exists) throw new Error(`Batch ID "${newId}" already exists.`);
 
                 const oldData = oldSnap.data() || {};
                 const clonedData = JSON.parse(JSON.stringify(oldData));
-                const migratedCount = await migrateBatchStorageAssets(oldId, newId, clonedData);
 
                 clonedData.renamedFrom = oldId;
                 clonedData.updatedBy = user;
@@ -748,37 +707,54 @@ This copies all gate data and images, then removes/archives the old ID.`);
                 clonedData.renamedAt = new Date().toISOString();
                 clonedData.renamedBy = user;
 
+                console.log("[renameBatch] Writing new Firestore document", { newId });
                 await newRef.set(clonedData, { merge: false });
 
-                try {
-                    await oldRef.delete();
-                } catch (deleteErr) {
-                    await oldRef.set({
-                        archived: true,
-                        renamedTo: newId,
-                        archivedBy: user,
-                        archivedAt: new Date().toISOString()
-                    }, { merge: true });
-                }
+                console.log("[renameBatch] Archiving old Firestore document", { oldId, renamedTo: newId });
+                await oldRef.set({
+                    archived: true,
+                    renamedTo: newId,
+                    archivedBy: user,
+                    archivedAt: new Date().toISOString(),
+                    updatedBy: user,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
 
                 batchListCache = [];
                 await fetchBatchList(true);
                 subscribeToBatch(newId);
                 hideBatchDropdown();
-                setBatchFeedback(`Batch renamed successfully. Migrated ${migratedCount} image(s).`, "success");
+
+                setBatchFeedback("Batch renamed successfully. Firestore data copied and original image paths preserved.", "success");
                 alert(`Batch renamed to ${newId} ✅`);
+                console.log("[renameBatch] Rename completed", { oldId, newId });
             } catch (err) {
-                console.error("Rename failed:", err);
-                setBatchFeedback(`Rename failed: ${err.message || err}`, "error");
-                alert(`Rename failed: ${err.message || err}`);
+                const friendly = getFriendlyErrorMessage(err);
+                console.error("[renameBatch] Rename failed", {
+                    oldId,
+                    newId,
+                    errorCode: err && err.code,
+                    errorMessage: err && err.message,
+                    rawError: err
+                });
+                setBatchFeedback(`Rename failed: ${friendly}`, "error");
+                alert(`Rename failed: ${friendly}`);
             } finally {
                 isRenameInProgress = false;
                 setRenameButtonState(Boolean(batchId), "Rename Batch");
             }
         }
 
+        function resolveBatchIdCase(rawId) {
+            const normalized = normalizeBatchId(rawId);
+            if (!normalized) return "";
+            const cmp = normalizeBatchIdForCompare(normalized);
+            const existing = batchListCache.find(b => normalizeBatchIdForCompare(b.id) === cmp);
+            return existing ? existing.id : normalized;
+        }
+
         function selectBatchFromInput(rawId) {
-            const id = normalizeBatchId(rawId);
+            const id = resolveBatchIdCase(rawId);
             if (!id) return;
             subscribeToBatch(id);
             hideBatchDropdown();
